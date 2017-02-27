@@ -36,20 +36,23 @@ func (v *Validator) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, e
 		return errors.Errorf("invalid path: %s", p)
 	}
 	i := sort.Search(len(v.parentDirs), func(i int) bool {
-		return v.parentDirs[i].dir <= dir
+		return v.parentDirs[len(v.parentDirs)-1-i].dir <= dir
 	})
+	i = len(v.parentDirs) - 1 - i
 	if i != len(v.parentDirs)-1 {
 		v.parentDirs = v.parentDirs[:i+1]
 	}
-	if v.parentDirs[i].last <= base {
+
+	if i == 0 && dir != "" || v.parentDirs[i].last >= base {
 		return errors.Errorf("changes out of order: %q %q", p, filepath.Join(v.parentDirs[i].dir, v.parentDirs[i].last))
 	}
 	v.parentDirs[i].last = base
 	if kind != fs.ChangeKindDelete && fi.IsDir() {
 		v.parentDirs = append(v.parentDirs, parent{
-			dir:  dir,
+			dir:  filepath.Join(dir, base),
 			last: "",
 		})
 	}
+	// todo: validate invalid mode combinations
 	return err
 }
