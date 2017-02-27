@@ -25,10 +25,10 @@ var _ = fmt.Errorf
 var _ = math.Inf
 
 type Stat struct {
-	Name    string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Mode    int64  `protobuf:"varint,2,opt,name=mode,proto3" json:"mode,omitempty"`
-	Uid     int32  `protobuf:"varint,3,opt,name=uid,proto3" json:"uid,omitempty"`
-	Gid     int32  `protobuf:"varint,4,opt,name=gid,proto3" json:"gid,omitempty"`
+	Path    string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	Mode    uint32 `protobuf:"varint,2,opt,name=mode,proto3" json:"mode,omitempty"`
+	Uid     uint32 `protobuf:"varint,3,opt,name=uid,proto3" json:"uid,omitempty"`
+	Gid     uint32 `protobuf:"varint,4,opt,name=gid,proto3" json:"gid,omitempty"`
 	Size_   int64  `protobuf:"varint,5,opt,name=size,proto3" json:"size,omitempty"`
 	ModTime int64  `protobuf:"varint,6,opt,name=modTime,proto3" json:"modTime,omitempty"`
 	// int32 typeflag = 7;
@@ -59,11 +59,11 @@ func (m *Stat) MarshalTo(data []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.Name) > 0 {
+	if len(m.Path) > 0 {
 		data[i] = 0xa
 		i++
-		i = encodeVarintStat(data, i, uint64(len(m.Name)))
-		i += copy(data[i:], m.Name)
+		i = encodeVarintStat(data, i, uint64(len(m.Path)))
+		i += copy(data[i:], m.Path)
 	}
 	if m.Mode != 0 {
 		data[i] = 0x10
@@ -139,7 +139,7 @@ func encodeVarintStat(data []byte, offset int, v uint64) int {
 func (m *Stat) Size() (n int) {
 	var l int
 	_ = l
-	l = len(m.Name)
+	l = len(m.Path)
 	if l > 0 {
 		n += 1 + l + sovStat(uint64(l))
 	}
@@ -215,7 +215,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Path", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -240,7 +240,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Name = string(data[iNdEx:postIndex])
+			m.Path = string(data[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 2:
 			if wireType != 0 {
@@ -256,7 +256,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				}
 				b := data[iNdEx]
 				iNdEx++
-				m.Mode |= (int64(b) & 0x7F) << shift
+				m.Mode |= (uint32(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -275,7 +275,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				}
 				b := data[iNdEx]
 				iNdEx++
-				m.Uid |= (int32(b) & 0x7F) << shift
+				m.Uid |= (uint32(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -294,7 +294,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				}
 				b := data[iNdEx]
 				iNdEx++
-				m.Gid |= (int32(b) & 0x7F) << shift
+				m.Gid |= (uint32(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
 				}

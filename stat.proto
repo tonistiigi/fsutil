@@ -3,10 +3,10 @@ syntax = "proto3";
 package diffcopy;
 
 message Stat {
-  string name = 1;
-  int64 mode = 2;
-  int32 uid = 3;
-  int32 gid = 4;
+  string path = 1;
+  uint32 mode = 2;
+  uint32 uid = 3;
+  uint32 gid = 4;
   int64 size = 5;
   int64 modTime = 6;
   // int32 typeflag = 7;
