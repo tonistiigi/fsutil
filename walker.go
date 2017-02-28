@@ -140,7 +140,6 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 				stat.Linkname = link
 			}
 		}
-
 		xattrs, err := sysx.LListxattr(origpath)
 		if err != nil {
 			return errors.Wrapf(err, "failed to xattr %s", path)

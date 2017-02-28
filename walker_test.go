@@ -75,18 +75,22 @@ file foo/bar2
 
 func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
 	return func(path string, fi os.FileInfo, err error) error {
+		stat, ok := fi.Sys().(*Stat)
+		if !ok {
+			return errors.Errorf("invalid symlink %s", path)
+		}
 		t := "file"
 		if fi.IsDir() {
 			t = "dir"
 		}
 		if fi.Mode()&os.ModeSymlink != 0 {
-			stat, ok := fi.Sys().(*Stat)
-			if !ok {
-				return errors.Errorf("invalid symlink %s", path)
-			}
 			t = "symlink:" + stat.Linkname
 		}
-		fmt.Fprintf(buf, "%s %s\n", t, path)
+		fmt.Fprintf(buf, "%s %s", t, path)
+		if fi.Mode()&os.ModeSymlink == 0 && stat.Linkname != "" {
+			fmt.Fprintf(buf, " >%s", stat.Linkname)
+		}
+		fmt.Fprintln(buf)
 		return nil
 	}
 }

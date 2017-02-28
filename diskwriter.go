@@ -82,6 +82,10 @@ func (v *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, 
 		if err := os.Symlink(stat.Linkname, newPath); err != nil {
 			return errors.Wrapf(err, "failed to symlink %s", newPath)
 		}
+	case stat.Linkname != "":
+		if err := os.Link(filepath.Join(v.dest, stat.Linkname), newPath); err != nil {
+			return errors.Wrapf(err, "failed to link %s to %s", newPath, stat.Linkname)
+		}
 	default:
 		file, err := os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY, fi.Mode()) //todo: windows
 		if err != nil {

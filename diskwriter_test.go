@@ -19,7 +19,7 @@ func TestWriterSimple(t *testing.T) {
 		"ADD bar/foo file",
 		"ADD bar/foo2 symlink ../foo",
 		"ADD foo file",
-		"ADD foo2 file",
+		"ADD foo2 file >foo",
 	})
 
 	dest, err := ioutil.TempDir("", "dest")
@@ -44,7 +44,7 @@ func TestWriterSimple(t *testing.T) {
 file bar/foo
 symlink:../foo bar/foo2
 file foo
-file foo2
+file foo2 >foo
 `)
 
 }
