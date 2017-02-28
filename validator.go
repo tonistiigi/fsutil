@@ -26,7 +26,9 @@ func (v *Validator) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, e
 	if v.parentDirs == nil {
 		v.parentDirs = make([]parent, 1, 10)
 	}
-	p = filepath.Clean(p)
+	if p != filepath.Clean(p) {
+		return errors.Errorf("invalid unclean path %s", p)
+	}
 	if filepath.IsAbs(p) {
 		return errors.Errorf("abolute path %s not allowed", p)
 	}

@@ -181,6 +181,11 @@ func parseChange(str string) *change {
 	st := &Stat{}
 	switch f[2] {
 	case "file":
+		if len(f) > 3 {
+			if f[3][0] == '>' {
+				st.Linkname = f[3][1:]
+			}
+		}
 	case "dir":
 		st.Mode |= uint32(os.ModeDir)
 	case "symlink":
