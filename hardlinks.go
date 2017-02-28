@@ -13,6 +13,8 @@ type Hardlinks struct {
 }
 
 func (v *Hardlinks) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, err error) error {
-
+	if err != nil {
+		return err
+	}
 	return nil
 }

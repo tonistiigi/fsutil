@@ -3,7 +3,7 @@
 // DO NOT EDIT!
 
 /*
-	Package diffcopy is a generated protocol buffer package.
+	Package fsutil is a generated protocol buffer package.
 
 	It is generated from these files:
 		stat.proto
@@ -32,17 +32,25 @@ type Stat struct {
 	Size_   int64  `protobuf:"varint,5,opt,name=size,proto3" json:"size,omitempty"`
 	ModTime int64  `protobuf:"varint,6,opt,name=modTime,proto3" json:"modTime,omitempty"`
 	// int32 typeflag = 7;
-	Linkname string `protobuf:"bytes,7,opt,name=linkname,proto3" json:"linkname,omitempty"`
-	Devmajor int64  `protobuf:"varint,8,opt,name=devmajor,proto3" json:"devmajor,omitempty"`
-	Devminor int64  `protobuf:"varint,9,opt,name=devminor,proto3" json:"devminor,omitempty"`
+	Linkname string            `protobuf:"bytes,7,opt,name=linkname,proto3" json:"linkname,omitempty"`
+	Devmajor int64             `protobuf:"varint,8,opt,name=devmajor,proto3" json:"devmajor,omitempty"`
+	Devminor int64             `protobuf:"varint,9,opt,name=devminor,proto3" json:"devminor,omitempty"`
+	Xattrs   map[string][]byte `protobuf:"bytes,10,rep,name=xattrs" json:"xattrs,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
 
 func (m *Stat) Reset()         { *m = Stat{} }
 func (m *Stat) String() string { return proto.CompactTextString(m) }
 func (*Stat) ProtoMessage()    {}
 
+func (m *Stat) GetXattrs() map[string][]byte {
+	if m != nil {
+		return m.Xattrs
+	}
+	return nil
+}
+
 func init() {
-	proto.RegisterType((*Stat)(nil), "diffcopy.Stat")
+	proto.RegisterType((*Stat)(nil), "fsutil.Stat")
 }
 func (m *Stat) Marshal() (data []byte, err error) {
 	size := m.Size()
@@ -106,6 +114,23 @@ func (m *Stat) MarshalTo(data []byte) (int, error) {
 		i++
 		i = encodeVarintStat(data, i, uint64(m.Devminor))
 	}
+	if len(m.Xattrs) > 0 {
+		for k, _ := range m.Xattrs {
+			data[i] = 0x52
+			i++
+			v := m.Xattrs[k]
+			mapSize := 1 + len(k) + sovStat(uint64(len(k))) + 1 + len(v) + sovStat(uint64(len(v)))
+			i = encodeVarintStat(data, i, uint64(mapSize))
+			data[i] = 0xa
+			i++
+			i = encodeVarintStat(data, i, uint64(len(k)))
+			i += copy(data[i:], k)
+			data[i] = 0x12
+			i++
+			i = encodeVarintStat(data, i, uint64(len(v)))
+			i += copy(data[i:], v)
+		}
+	}
 	return i, nil
 }
 
@@ -167,6 +192,14 @@ func (m *Stat) Size() (n int) {
 	}
 	if m.Devminor != 0 {
 		n += 1 + sovStat(uint64(m.Devminor))
+	}
+	if len(m.Xattrs) > 0 {
+		for k, v := range m.Xattrs {
+			_ = k
+			_ = v
+			mapEntrySize := 1 + len(k) + sovStat(uint64(len(k))) + 1 + len(v) + sovStat(uint64(len(v)))
+			n += mapEntrySize + 1 + sovStat(uint64(mapEntrySize))
+		}
 	}
 	return n
 }
@@ -404,6 +437,118 @@ func (m *Stat) Unmarshal(data []byte) error {
 					break
 				}
 			}
+		case 10:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Xattrs", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStat
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				msglen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthStat
+			}
+			postIndex := iNdEx + msglen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			var keykey uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStat
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				keykey |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			var stringLenmapkey uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStat
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				stringLenmapkey |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLenmapkey := int(stringLenmapkey)
+			if intStringLenmapkey < 0 {
+				return ErrInvalidLengthStat
+			}
+			postStringIndexmapkey := iNdEx + intStringLenmapkey
+			if postStringIndexmapkey > l {
+				return io.ErrUnexpectedEOF
+			}
+			mapkey := string(data[iNdEx:postStringIndexmapkey])
+			iNdEx = postStringIndexmapkey
+			var valuekey uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStat
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				valuekey |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			var mapbyteLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStat
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := data[iNdEx]
+				iNdEx++
+				mapbyteLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intMapbyteLen := int(mapbyteLen)
+			if intMapbyteLen < 0 {
+				return ErrInvalidLengthStat
+			}
+			postbytesIndex := iNdEx + intMapbyteLen
+			if postbytesIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			mapvalue := make([]byte, mapbyteLen)
+			copy(mapvalue, data[iNdEx:postbytesIndex])
+			iNdEx = postbytesIndex
+			if m.Xattrs == nil {
+				m.Xattrs = make(map[string][]byte)
+			}
+			m.Xattrs[mapkey] = mapvalue
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipStat(data[iNdEx:])

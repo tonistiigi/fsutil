@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package diffcopy;
+package fsutil;
 
 message Stat {
   string path = 1;
@@ -13,4 +13,5 @@ message Stat {
   string linkname = 7;
   int64 devmajor = 8;
   int64 devminor = 9;
+  map<string, bytes> xattrs = 10;
 }

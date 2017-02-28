@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/pkg/errors"
+	"github.com/stevvooe/continuity/sysx"
 )
 
 type WalkOpt struct {
@@ -46,7 +47,7 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		if err != nil {
 			return err
 		}
-
+		origpath := path
 		path, err = filepath.Rel(root, path)
 		if err != nil {
 			return err
@@ -130,6 +131,21 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 				}
 			}
 			seenFiles[ino] = path
+		}
+
+		xattrs, err := sysx.LListxattr(origpath)
+		if err != nil {
+			return errors.Wrapf(err, "failed to xattr %s", path)
+		}
+		if len(xattrs) > 0 {
+			m := make(map[string][]byte)
+			for _, key := range xattrs {
+				v, err := sysx.LGetxattr(origpath, key)
+				if err == nil {
+					m[key] = v
+				}
+			}
+			stat.Xattrs = m
 		}
 
 		select {

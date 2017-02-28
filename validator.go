@@ -20,6 +20,9 @@ type Validator struct {
 }
 
 func (v *Validator) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, err error) error {
+	if err != nil {
+		return err
+	}
 	if v.parentDirs == nil {
 		v.parentDirs = make([]parent, 1, 10)
 	}
