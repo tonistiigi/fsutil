@@ -1,10 +1,12 @@
-package diffcopy
+package fsutil
 
 import (
 	"os"
 
 	"github.com/docker/containerd/fs"
 )
+
+// Hardlinks validates that all targets for links were
 
 type Hardlinks struct {
 	seenFiles map[string]struct{}

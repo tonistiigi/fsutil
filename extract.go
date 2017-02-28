@@ -1,4 +1,4 @@
-package diffcopy
+package fsutil
 
 import (
 	"os"

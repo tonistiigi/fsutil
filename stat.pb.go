@@ -11,7 +11,7 @@
 	It has these top-level messages:
 		Stat
 */
-package diffcopy
+package fsutil
 
 import proto "github.com/gogo/protobuf/proto"
 import fmt "fmt"
