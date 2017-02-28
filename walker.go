@@ -131,6 +131,14 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 				}
 			}
 			seenFiles[ino] = path
+
+			if fi.Mode()&os.ModeSymlink != 0 {
+				link, err := os.Readlink(origpath)
+				if err != nil {
+					return errors.Wrapf(err, "failed to readlink %s", origpath)
+				}
+				stat.Linkname = link
+			}
 		}
 
 		xattrs, err := sysx.LListxattr(origpath)

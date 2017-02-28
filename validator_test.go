@@ -183,6 +183,12 @@ func parseChange(str string) *change {
 	case "file":
 	case "dir":
 		st.Mode |= uint32(os.ModeDir)
+	case "symlink":
+		if len(f) < 4 {
+			panic(errStr)
+		}
+		st.Mode |= uint32(os.ModeSymlink)
+		st.Linkname = f[3]
 	}
 	c.fi = &StatInfo{st}
 	return c

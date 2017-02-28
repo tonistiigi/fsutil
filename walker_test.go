@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/docker/containerd/fs"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -78,6 +79,13 @@ func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
 		if fi.IsDir() {
 			t = "dir"
 		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			stat, ok := fi.Sys().(*Stat)
+			if !ok {
+				return errors.Errorf("invalid symlink %s", path)
+			}
+			t = "symlink:" + stat.Linkname
+		}
 		fmt.Fprintf(buf, "%s %s\n", t, path)
 		return nil
 	}
@@ -98,6 +106,14 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 			p := filepath.Join(tmpdir, c.path)
 			if c.fi.IsDir() {
 				if err := os.Mkdir(p, 0700); err != nil {
+					return "", err
+				}
+			} else if c.fi.Mode()&os.ModeSymlink != 0 {
+				stat, ok := c.fi.Sys().(*Stat)
+				if !ok {
+					return "", errors.Errorf("invalid symlink change %s", p)
+				}
+				if err := os.Symlink(stat.Linkname, p); err != nil {
 					return "", err
 				}
 			} else {
