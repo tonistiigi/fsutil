@@ -4,123 +4,103 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"sync"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/docker/docker/pkg/fileutils"
 	"github.com/pkg/errors"
 )
 
-type Walker interface {
-	NextPath() (Path, error)
-}
-
 type WalkOpt struct {
-	IncludePaths []string
-	ExcludePaths []string
+	IncludePaths    []string // todo: remove?
+	ExcludePatterns []string
 }
 
-type Path interface { // todo: change fs.Change type to avoid this
-	Path() string
-	os.FileInfo
-}
-
-func Walk(ctx context.Context, p string, opt *WalkOpt) (Walker, error) {
-	evalPath, err := filepath.EvalSymlinks(p)
+func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) error {
+	root, err := filepath.EvalSymlinks(p)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to resolve %s", evalPath)
+		return errors.Wrapf(err, "failed to resolve %s", root)
 	}
-	fi, err := os.Stat(evalPath)
+	fi, err := os.Stat(root)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to stat: %s", evalPath)
+		return errors.Wrapf(err, "failed to stat: %s", root)
 	}
 	if !fi.IsDir() {
-		return nil, errors.Errorf("%s is not a directory", evalPath)
+		return errors.Errorf("%s is not a directory", root)
 	}
-	w := &walker{
-		root: evalPath,
-		opt:  opt,
-		ctx:  ctx,
-		ch:   make(chan Path, 128),
-	}
-	go w.run(ctx)
-	return w, nil
-}
 
-type walker struct {
-	root string
-	opt  *WalkOpt
-	ch   chan Path
-	ctx  context.Context
-	mu   sync.RWMutex
-	err  error
-}
+	var patterns []string
+	var patDirs [][]string
+	var exceptions bool
+	if opt != nil && opt.ExcludePatterns != nil {
+		patterns, patDirs, exceptions, err = fileutils.CleanPatterns(opt.ExcludePatterns)
 
-func (w *walker) NextPath() (Path, error) {
-	select {
-	case <-w.ctx.Done():
-		w.mu.RLock()
-		defer w.mu.RLock()
-		if w.err != nil {
-			return nil, w.err
-		} else {
-			return nil, w.ctx.Err()
+		if err != nil {
+			return errors.Wrapf(err, "invalid excludepaths %s", opt.ExcludePatterns)
 		}
 	}
-	select {
-	case <-w.ctx.Done():
-		w.mu.RLock()
-		defer w.mu.RLock()
-		if w.err != nil {
-			return nil, w.err
-		} else {
-			return nil, w.ctx.Err()
-		}
-	case p := <-w.ch:
-		return p, nil
-	}
-}
 
-func (w *walker) run(ctx context.Context) error {
 	seenFiles := make(map[uint64]string)
-	defer close(w.ch)
-	err := filepath.Walk(w.root, func(path string, fi os.FileInfo, err error) error {
+	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		path, err = filepath.Rel(w.root, path)
+		path, err = filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
+		// Skip root
+		if path == "." {
+			return nil
+		}
 
-		if w.opt != nil {
-			if w.opt.IncludePaths != nil {
+		if opt != nil {
+			if opt.IncludePaths != nil {
 				matched := false
-				for _, p := range w.opt.IncludePaths {
+				for _, p := range opt.IncludePaths {
 					if m, _ := filepath.Match(p, path); m {
 						matched = true
 						break
 					}
 				}
 				if !matched {
+					if fi.IsDir() {
+						return filepath.SkipDir
+					}
 					return nil
 				}
 			}
-			if w.opt.ExcludePaths != nil {
-				for _, p := range w.opt.ExcludePaths {
-					if m, _ := filepath.Match(p, path); m {
-						return nil
+			if opt.ExcludePatterns != nil {
+				m, err := fileutils.OptimizedMatches(path, patterns, patDirs)
+				if err != nil {
+					return errors.Wrap(err, "failed to match excludepatterns")
+				}
+
+				if m {
+					if fi.IsDir() {
+						if !exceptions {
+							return filepath.SkipDir
+						}
+						dirSlash := path + string(filepath.Separator)
+						for _, pat := range patterns {
+							if pat[0] != '!' {
+								continue
+							}
+							pat = pat[1:] + string(filepath.Separator)
+							if strings.HasPrefix(pat, dirSlash) {
+								goto passedFilter
+							}
+						}
+						return filepath.SkipDir
 					}
+					return nil
 				}
 			}
 		}
 
-		// Skip root
-		if path == "." {
-			return nil
-		}
-
+	passedFilter:
 		s, ok := fi.Sys().(*syscall.Stat_t)
 		if !ok {
 			return errors.New("linux only atm")
@@ -152,24 +132,16 @@ func (w *walker) run(ctx context.Context) error {
 			seenFiles[ino] = path
 		}
 
-		p := &currentPath{
-			path:     path,
-			FileInfo: &StatInfo{stat},
-		}
-
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case w.ch <- p:
-			return nil
+		default:
+			if err := fn(path, &StatInfo{stat}, nil); err != nil {
+				return err
+			}
 		}
+		return nil
 	})
-	if err != nil {
-		w.mu.Lock()
-		w.err = err
-		w.mu.Unlock()
-	}
-	return err
 }
 
 func major(device uint64) uint64 {
