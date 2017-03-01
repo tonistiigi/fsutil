@@ -151,6 +151,7 @@ type change struct {
 	kind fs.ChangeKind
 	path string
 	fi   os.FileInfo
+	data string
 }
 
 func changeStream(dt []string) (changes []*change) {
@@ -184,6 +185,8 @@ func parseChange(str string) *change {
 		if len(f) > 3 {
 			if f[3][0] == '>' {
 				st.Linkname = f[3][1:]
+			} else {
+				c.data = f[3]
 			}
 		}
 	case "dir":

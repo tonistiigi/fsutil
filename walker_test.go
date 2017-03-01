@@ -121,9 +121,16 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 					return "", err
 				}
 			} else {
-				if _, err := os.Create(p); err != nil {
+				f, err := os.Create(p)
+				if err != nil {
 					return "", err
 				}
+				if len(c.data) > 0 {
+					if _, err := f.Write([]byte(c.data)); err != nil {
+						return "", err
+					}
+				}
+				f.Close()
 			}
 		}
 	}

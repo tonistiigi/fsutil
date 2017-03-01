@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/docker/containerd/fs"
 	"github.com/stretchr/testify/assert"
@@ -54,7 +55,7 @@ func TestWalkerWriterSimple(t *testing.T) {
 		"ADD bar dir",
 		"ADD bar/foo file",
 		"ADD bar/foo2 symlink ../foo",
-		"ADD foo file",
+		"ADD foo file mydata",
 		"ADD foo2 file",
 	}))
 	assert.NoError(t, err)
@@ -66,7 +67,7 @@ func TestWalkerWriterSimple(t *testing.T) {
 
 	dw := &DiskWriter{
 		dest:         dest,
-		syncDataFunc: noOpWriteTo,
+		syncDataFunc: newWriteToFunc(d, 0),
 	}
 
 	err = Walk(context.Background(), d, nil, readAsAdd(dw.HandleChange))
@@ -83,6 +84,46 @@ file foo
 file foo2
 `)
 
+	dt, err := ioutil.ReadFile(filepath.Join(dest, "foo"))
+	assert.NoError(t, err)
+	assert.Equal(t, []byte("mydata"), dt)
+
+}
+
+func TestWalkerWriterAsync(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/foo1 file data1",
+		"ADD foo/foo2 file data2",
+		"ADD foo/foo3 file data3",
+		"ADD foo/foo4 file data4",
+		"ADD foo5 file data5",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	dest, err := ioutil.TempDir("", "dest")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dest)
+
+	dw := &DiskWriter{
+		dest:         dest,
+		syncDataFunc: newWriteToFunc(d, 300*time.Millisecond),
+	}
+
+	err = Walk(context.Background(), d, nil, readAsAdd(dw.HandleChange))
+	assert.NoError(t, err)
+
+	err = dw.Wait()
+	assert.NoError(t, err)
+
+	dt, err := ioutil.ReadFile(filepath.Join(dest, "foo/foo3"))
+	assert.NoError(t, err)
+	assert.Equal(t, "data3", string(dt))
+
+	dt, err = ioutil.ReadFile(filepath.Join(dest, "foo5"))
+	assert.NoError(t, err)
+	assert.Equal(t, "data5", string(dt))
 }
 
 func readAsAdd(f HandleChangeFn) filepath.WalkFunc {
@@ -91,6 +132,25 @@ func readAsAdd(f HandleChangeFn) filepath.WalkFunc {
 	}
 }
 
-func noOpWriteTo(string, io.Writer) error {
+func noOpWriteTo(context.Context, string, io.WriteCloser) error {
 	return nil
+}
+
+func newWriteToFunc(baseDir string, delay time.Duration) writeToFunc {
+	return func(ctx context.Context, path string, wc io.WriteCloser) error {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		f, err := os.Open(filepath.Join(baseDir, path))
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(wc, f); err != nil {
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return err
+		}
+		return nil
+	}
 }

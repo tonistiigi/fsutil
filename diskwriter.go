@@ -1,6 +1,7 @@
 package fsutil
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,20 +15,50 @@ import (
 	"github.com/stevvooe/continuity/sysx"
 )
 
-type writeToFunc func(string, io.Writer) error
+type writeToFunc func(context.Context, string, io.WriteCloser) error
 
 type DiskWriter struct {
 	asyncDataFunc writeToFunc
 	syncDataFunc  writeToFunc
 	dest          string
+
+	wg     sync.WaitGroup
+	mu     sync.RWMutex
+	err    error
+	ctx    context.Context
+	cancel func()
 }
 
-func (v *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, err error) error {
+func (dw *DiskWriter) Wait() error {
+	dw.wg.Wait()
+	dw.mu.RLock()
+	defer dw.mu.RUnlock()
+	return dw.err
+}
+
+func (dw *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, err error) (retErr error) {
 	if err != nil {
 		return err
 	}
 
-	destPath := filepath.Join(v.dest, p)
+	if dw.ctx == nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		dw.ctx = ctx
+		dw.cancel = cancel
+	}
+
+	defer func() {
+		if retErr != nil {
+			dw.mu.Lock()
+			if dw.err == nil {
+				dw.err = err
+			}
+			dw.mu.Unlock()
+			dw.cancel()
+		}
+	}()
+
+	destPath := filepath.Join(dw.dest, p)
 
 	if kind == fs.ChangeKindDelete {
 		// todo: no need to validate if diff is trusted but is it always?
@@ -69,6 +100,8 @@ func (v *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, 
 
 	// todo: combine with hardlink validation
 
+	asyncRequestFileData := false
+
 	switch {
 	case fi.IsDir():
 		if err := os.Mkdir(newPath, fi.Mode()); err != nil {
@@ -83,7 +116,7 @@ func (v *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, 
 			return errors.Wrapf(err, "failed to symlink %s", newPath)
 		}
 	case stat.Linkname != "":
-		if err := os.Link(filepath.Join(v.dest, stat.Linkname), newPath); err != nil {
+		if err := os.Link(filepath.Join(dw.dest, stat.Linkname), newPath); err != nil {
 			return errors.Wrapf(err, "failed to link %s to %s", newPath, stat.Linkname)
 		}
 	default:
@@ -91,9 +124,13 @@ func (v *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, 
 		if err != nil {
 			return errors.Wrapf(err, "failed to create %s", newPath)
 		}
-		// sync only atm
-		if err := v.syncDataFunc(p, file); err != nil {
-			return errors.Wrapf(err, "failed to write %s", newPath)
+		if dw.syncDataFunc != nil {
+			if err := dw.syncDataFunc(dw.ctx, p, file); err != nil {
+				return errors.Wrapf(err, "failed to write %s", newPath)
+			}
+			break
+		} else if dw.syncDataFunc != nil {
+			asyncRequestFileData = true
 		}
 		if err := file.Close(); err != nil {
 			return errors.Wrapf(err, "failed to close %s", newPath)
@@ -110,6 +147,51 @@ func (v *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, 
 		}
 	}
 
+	if asyncRequestFileData {
+		dw.requestAsyncFileData(p, destPath)
+	}
+
+	return nil
+}
+
+func (dw *DiskWriter) requestAsyncFileData(p, dest string) {
+	dw.wg.Add(1)
+	go func() {
+		if err := dw.asyncDataFunc(dw.ctx, p, &lazyFileWriter{
+			dest: dest,
+		}); err != nil {
+			dw.mu.Lock()
+			if dw.err == nil {
+				dw.err = err
+				dw.cancel()
+			}
+			dw.mu.Unlock()
+		}
+		dw.wg.Done()
+	}()
+}
+
+type lazyFileWriter struct {
+	dest string
+	ctx  context.Context
+	f    *os.File
+}
+
+func (lfw *lazyFileWriter) Write(dt []byte) (int, error) {
+	if lfw.f == nil {
+		file, err := os.OpenFile(lfw.dest, os.O_WRONLY, 0) //todo: windows
+		if err != nil {
+			return 0, errors.Wrapf(err, "failed to open %s", lfw.dest)
+		}
+		lfw.f = file
+	}
+	return lfw.f.Write(dt)
+}
+
+func (lfw *lazyFileWriter) Close() error {
+	if lfw.f != nil {
+		return lfw.f.Close()
+	}
 	return nil
 }
 
