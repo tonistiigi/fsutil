@@ -108,16 +108,20 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 	for _, c := range inp {
 		if c.kind == fs.ChangeKindAdd {
 			p := filepath.Join(tmpdir, c.path)
+			stat, ok := c.fi.Sys().(*Stat)
+			if !ok {
+				return "", errors.Errorf("invalid symlink change %s", p)
+			}
 			if c.fi.IsDir() {
 				if err := os.Mkdir(p, 0700); err != nil {
 					return "", err
 				}
 			} else if c.fi.Mode()&os.ModeSymlink != 0 {
-				stat, ok := c.fi.Sys().(*Stat)
-				if !ok {
-					return "", errors.Errorf("invalid symlink change %s", p)
-				}
 				if err := os.Symlink(stat.Linkname, p); err != nil {
+					return "", err
+				}
+			} else if len(stat.Linkname) > 0 {
+				if err := os.Link(filepath.Join(tmpdir, stat.Linkname), p); err != nil {
 					return "", err
 				}
 			} else {

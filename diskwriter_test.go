@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -96,7 +97,7 @@ func TestWalkerWriterAsync(t *testing.T) {
 		"ADD foo/foo1 file data1",
 		"ADD foo/foo2 file data2",
 		"ADD foo/foo3 file data3",
-		"ADD foo/foo4 file data4",
+		"ADD foo/foo4 file >foo/foo3",
 		"ADD foo5 file data5",
 	}))
 	assert.NoError(t, err)
@@ -107,9 +108,11 @@ func TestWalkerWriterAsync(t *testing.T) {
 	defer os.RemoveAll(dest)
 
 	dw := &DiskWriter{
-		dest:         dest,
-		syncDataFunc: newWriteToFunc(d, 300*time.Millisecond),
+		dest:          dest,
+		asyncDataFunc: newWriteToFunc(d, 300*time.Millisecond),
 	}
+
+	st := time.Now()
 
 	err = Walk(context.Background(), d, nil, readAsAdd(dw.HandleChange))
 	assert.NoError(t, err)
@@ -121,9 +124,26 @@ func TestWalkerWriterAsync(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "data3", string(dt))
 
+	dt, err = ioutil.ReadFile(filepath.Join(dest, "foo/foo4"))
+	assert.NoError(t, err)
+	assert.Equal(t, "data3", string(dt))
+
+	fi1, err := os.Lstat(filepath.Join(dest, "foo/foo3"))
+	assert.NoError(t, err)
+	fi2, err := os.Lstat(filepath.Join(dest, "foo/foo4"))
+	assert.NoError(t, err)
+	stat1, ok1 := fi1.Sys().(*syscall.Stat_t)
+	stat2, ok2 := fi2.Sys().(*syscall.Stat_t)
+	if ok1 && ok2 {
+		assert.Equal(t, stat1.Ino, stat2.Ino)
+	}
+
 	dt, err = ioutil.ReadFile(filepath.Join(dest, "foo5"))
 	assert.NoError(t, err)
 	assert.Equal(t, "data5", string(dt))
+
+	duration := time.Since(st)
+	assert.True(t, duration < 500*time.Millisecond)
 }
 
 func readAsAdd(f HandleChangeFn) filepath.WalkFunc {

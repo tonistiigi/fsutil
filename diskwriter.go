@@ -129,7 +129,7 @@ func (dw *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo,
 				return errors.Wrapf(err, "failed to write %s", newPath)
 			}
 			break
-		} else if dw.syncDataFunc != nil {
+		} else if dw.asyncDataFunc != nil {
 			asyncRequestFileData = true
 		}
 		if err := file.Close(); err != nil {
