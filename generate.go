@@ -1,3 +1,3 @@
 package fsutil
 
-//go:generate protoc  --gogofaster_out=. stat.proto
+//go:generate protoc --gogoslick_out=. stat.proto wire.proto

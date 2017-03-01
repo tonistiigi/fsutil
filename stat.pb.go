@@ -7,9 +7,11 @@
 
 	It is generated from these files:
 		stat.proto
+		wire.proto
 
 	It has these top-level messages:
 		Stat
+		Packet
 */
 package fsutil
 
@@ -17,12 +19,24 @@ import proto "github.com/gogo/protobuf/proto"
 import fmt "fmt"
 import math "math"
 
+import bytes "bytes"
+
+import strings "strings"
+import reflect "reflect"
+import github_com_gogo_protobuf_sortkeys "github.com/gogo/protobuf/sortkeys"
+
 import io "io"
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
+
+// This is a compile-time assertion to ensure that this generated file
+// is compatible with the proto package it is being compiled against.
+// A compilation error at this line likely means your copy of the
+// proto package needs to be updated.
+const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 
 type Stat struct {
 	Path    string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
@@ -38,9 +52,72 @@ type Stat struct {
 	Xattrs   map[string][]byte `protobuf:"bytes,10,rep,name=xattrs" json:"xattrs,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 }
 
-func (m *Stat) Reset()         { *m = Stat{} }
-func (m *Stat) String() string { return proto.CompactTextString(m) }
-func (*Stat) ProtoMessage()    {}
+func (m *Stat) Reset()                    { *m = Stat{} }
+func (*Stat) ProtoMessage()               {}
+func (*Stat) Descriptor() ([]byte, []int) { return fileDescriptorStat, []int{0} }
+
+func (m *Stat) GetPath() string {
+	if m != nil {
+		return m.Path
+	}
+	return ""
+}
+
+func (m *Stat) GetMode() uint32 {
+	if m != nil {
+		return m.Mode
+	}
+	return 0
+}
+
+func (m *Stat) GetUid() uint32 {
+	if m != nil {
+		return m.Uid
+	}
+	return 0
+}
+
+func (m *Stat) GetGid() uint32 {
+	if m != nil {
+		return m.Gid
+	}
+	return 0
+}
+
+func (m *Stat) GetSize_() int64 {
+	if m != nil {
+		return m.Size_
+	}
+	return 0
+}
+
+func (m *Stat) GetModTime() int64 {
+	if m != nil {
+		return m.ModTime
+	}
+	return 0
+}
+
+func (m *Stat) GetLinkname() string {
+	if m != nil {
+		return m.Linkname
+	}
+	return ""
+}
+
+func (m *Stat) GetDevmajor() int64 {
+	if m != nil {
+		return m.Devmajor
+	}
+	return 0
+}
+
+func (m *Stat) GetDevminor() int64 {
+	if m != nil {
+		return m.Devminor
+	}
+	return 0
+}
 
 func (m *Stat) GetXattrs() map[string][]byte {
 	if m != nil {
@@ -52,113 +129,220 @@ func (m *Stat) GetXattrs() map[string][]byte {
 func init() {
 	proto.RegisterType((*Stat)(nil), "fsutil.Stat")
 }
-func (m *Stat) Marshal() (data []byte, err error) {
+func (this *Stat) Equal(that interface{}) bool {
+	if that == nil {
+		if this == nil {
+			return true
+		}
+		return false
+	}
+
+	that1, ok := that.(*Stat)
+	if !ok {
+		that2, ok := that.(Stat)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		if this == nil {
+			return true
+		}
+		return false
+	} else if this == nil {
+		return false
+	}
+	if this.Path != that1.Path {
+		return false
+	}
+	if this.Mode != that1.Mode {
+		return false
+	}
+	if this.Uid != that1.Uid {
+		return false
+	}
+	if this.Gid != that1.Gid {
+		return false
+	}
+	if this.Size_ != that1.Size_ {
+		return false
+	}
+	if this.ModTime != that1.ModTime {
+		return false
+	}
+	if this.Linkname != that1.Linkname {
+		return false
+	}
+	if this.Devmajor != that1.Devmajor {
+		return false
+	}
+	if this.Devminor != that1.Devminor {
+		return false
+	}
+	if len(this.Xattrs) != len(that1.Xattrs) {
+		return false
+	}
+	for i := range this.Xattrs {
+		if !bytes.Equal(this.Xattrs[i], that1.Xattrs[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *Stat) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 14)
+	s = append(s, "&fsutil.Stat{")
+	s = append(s, "Path: "+fmt.Sprintf("%#v", this.Path)+",\n")
+	s = append(s, "Mode: "+fmt.Sprintf("%#v", this.Mode)+",\n")
+	s = append(s, "Uid: "+fmt.Sprintf("%#v", this.Uid)+",\n")
+	s = append(s, "Gid: "+fmt.Sprintf("%#v", this.Gid)+",\n")
+	s = append(s, "Size_: "+fmt.Sprintf("%#v", this.Size_)+",\n")
+	s = append(s, "ModTime: "+fmt.Sprintf("%#v", this.ModTime)+",\n")
+	s = append(s, "Linkname: "+fmt.Sprintf("%#v", this.Linkname)+",\n")
+	s = append(s, "Devmajor: "+fmt.Sprintf("%#v", this.Devmajor)+",\n")
+	s = append(s, "Devminor: "+fmt.Sprintf("%#v", this.Devminor)+",\n")
+	keysForXattrs := make([]string, 0, len(this.Xattrs))
+	for k, _ := range this.Xattrs {
+		keysForXattrs = append(keysForXattrs, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForXattrs)
+	mapStringForXattrs := "map[string][]byte{"
+	for _, k := range keysForXattrs {
+		mapStringForXattrs += fmt.Sprintf("%#v: %#v,", k, this.Xattrs[k])
+	}
+	mapStringForXattrs += "}"
+	if this.Xattrs != nil {
+		s = append(s, "Xattrs: "+mapStringForXattrs+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func valueToGoStringStat(v interface{}, typ string) string {
+	rv := reflect.ValueOf(v)
+	if rv.IsNil() {
+		return "nil"
+	}
+	pv := reflect.Indirect(rv).Interface()
+	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
+}
+func (m *Stat) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
-	data = make([]byte, size)
-	n, err := m.MarshalTo(data)
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
 	if err != nil {
 		return nil, err
 	}
-	return data[:n], nil
+	return dAtA[:n], nil
 }
 
-func (m *Stat) MarshalTo(data []byte) (int, error) {
+func (m *Stat) MarshalTo(dAtA []byte) (int, error) {
 	var i int
 	_ = i
 	var l int
 	_ = l
 	if len(m.Path) > 0 {
-		data[i] = 0xa
+		dAtA[i] = 0xa
 		i++
-		i = encodeVarintStat(data, i, uint64(len(m.Path)))
-		i += copy(data[i:], m.Path)
+		i = encodeVarintStat(dAtA, i, uint64(len(m.Path)))
+		i += copy(dAtA[i:], m.Path)
 	}
 	if m.Mode != 0 {
-		data[i] = 0x10
+		dAtA[i] = 0x10
 		i++
-		i = encodeVarintStat(data, i, uint64(m.Mode))
+		i = encodeVarintStat(dAtA, i, uint64(m.Mode))
 	}
 	if m.Uid != 0 {
-		data[i] = 0x18
+		dAtA[i] = 0x18
 		i++
-		i = encodeVarintStat(data, i, uint64(m.Uid))
+		i = encodeVarintStat(dAtA, i, uint64(m.Uid))
 	}
 	if m.Gid != 0 {
-		data[i] = 0x20
+		dAtA[i] = 0x20
 		i++
-		i = encodeVarintStat(data, i, uint64(m.Gid))
+		i = encodeVarintStat(dAtA, i, uint64(m.Gid))
 	}
 	if m.Size_ != 0 {
-		data[i] = 0x28
+		dAtA[i] = 0x28
 		i++
-		i = encodeVarintStat(data, i, uint64(m.Size_))
+		i = encodeVarintStat(dAtA, i, uint64(m.Size_))
 	}
 	if m.ModTime != 0 {
-		data[i] = 0x30
+		dAtA[i] = 0x30
 		i++
-		i = encodeVarintStat(data, i, uint64(m.ModTime))
+		i = encodeVarintStat(dAtA, i, uint64(m.ModTime))
 	}
 	if len(m.Linkname) > 0 {
-		data[i] = 0x3a
+		dAtA[i] = 0x3a
 		i++
-		i = encodeVarintStat(data, i, uint64(len(m.Linkname)))
-		i += copy(data[i:], m.Linkname)
+		i = encodeVarintStat(dAtA, i, uint64(len(m.Linkname)))
+		i += copy(dAtA[i:], m.Linkname)
 	}
 	if m.Devmajor != 0 {
-		data[i] = 0x40
+		dAtA[i] = 0x40
 		i++
-		i = encodeVarintStat(data, i, uint64(m.Devmajor))
+		i = encodeVarintStat(dAtA, i, uint64(m.Devmajor))
 	}
 	if m.Devminor != 0 {
-		data[i] = 0x48
+		dAtA[i] = 0x48
 		i++
-		i = encodeVarintStat(data, i, uint64(m.Devminor))
+		i = encodeVarintStat(dAtA, i, uint64(m.Devminor))
 	}
 	if len(m.Xattrs) > 0 {
 		for k, _ := range m.Xattrs {
-			data[i] = 0x52
+			dAtA[i] = 0x52
 			i++
 			v := m.Xattrs[k]
-			mapSize := 1 + len(k) + sovStat(uint64(len(k))) + 1 + len(v) + sovStat(uint64(len(v)))
-			i = encodeVarintStat(data, i, uint64(mapSize))
-			data[i] = 0xa
+			byteSize := 0
+			if len(v) > 0 {
+				byteSize = 1 + len(v) + sovStat(uint64(len(v)))
+			}
+			mapSize := 1 + len(k) + sovStat(uint64(len(k))) + byteSize
+			i = encodeVarintStat(dAtA, i, uint64(mapSize))
+			dAtA[i] = 0xa
 			i++
-			i = encodeVarintStat(data, i, uint64(len(k)))
-			i += copy(data[i:], k)
-			data[i] = 0x12
-			i++
-			i = encodeVarintStat(data, i, uint64(len(v)))
-			i += copy(data[i:], v)
+			i = encodeVarintStat(dAtA, i, uint64(len(k)))
+			i += copy(dAtA[i:], k)
+			if len(v) > 0 {
+				dAtA[i] = 0x12
+				i++
+				i = encodeVarintStat(dAtA, i, uint64(len(v)))
+				i += copy(dAtA[i:], v)
+			}
 		}
 	}
 	return i, nil
 }
 
-func encodeFixed64Stat(data []byte, offset int, v uint64) int {
-	data[offset] = uint8(v)
-	data[offset+1] = uint8(v >> 8)
-	data[offset+2] = uint8(v >> 16)
-	data[offset+3] = uint8(v >> 24)
-	data[offset+4] = uint8(v >> 32)
-	data[offset+5] = uint8(v >> 40)
-	data[offset+6] = uint8(v >> 48)
-	data[offset+7] = uint8(v >> 56)
+func encodeFixed64Stat(dAtA []byte, offset int, v uint64) int {
+	dAtA[offset] = uint8(v)
+	dAtA[offset+1] = uint8(v >> 8)
+	dAtA[offset+2] = uint8(v >> 16)
+	dAtA[offset+3] = uint8(v >> 24)
+	dAtA[offset+4] = uint8(v >> 32)
+	dAtA[offset+5] = uint8(v >> 40)
+	dAtA[offset+6] = uint8(v >> 48)
+	dAtA[offset+7] = uint8(v >> 56)
 	return offset + 8
 }
-func encodeFixed32Stat(data []byte, offset int, v uint32) int {
-	data[offset] = uint8(v)
-	data[offset+1] = uint8(v >> 8)
-	data[offset+2] = uint8(v >> 16)
-	data[offset+3] = uint8(v >> 24)
+func encodeFixed32Stat(dAtA []byte, offset int, v uint32) int {
+	dAtA[offset] = uint8(v)
+	dAtA[offset+1] = uint8(v >> 8)
+	dAtA[offset+2] = uint8(v >> 16)
+	dAtA[offset+3] = uint8(v >> 24)
 	return offset + 4
 }
-func encodeVarintStat(data []byte, offset int, v uint64) int {
+func encodeVarintStat(dAtA []byte, offset int, v uint64) int {
 	for v >= 1<<7 {
-		data[offset] = uint8(v&0x7f | 0x80)
+		dAtA[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
-	data[offset] = uint8(v)
+	dAtA[offset] = uint8(v)
 	return offset + 1
 }
 func (m *Stat) Size() (n int) {
@@ -197,7 +381,11 @@ func (m *Stat) Size() (n int) {
 		for k, v := range m.Xattrs {
 			_ = k
 			_ = v
-			mapEntrySize := 1 + len(k) + sovStat(uint64(len(k))) + 1 + len(v) + sovStat(uint64(len(v)))
+			l = 0
+			if len(v) > 0 {
+				l = 1 + len(v) + sovStat(uint64(len(v)))
+			}
+			mapEntrySize := 1 + len(k) + sovStat(uint64(len(k))) + l
 			n += mapEntrySize + 1 + sovStat(uint64(mapEntrySize))
 		}
 	}
@@ -217,8 +405,45 @@ func sovStat(x uint64) (n int) {
 func sozStat(x uint64) (n int) {
 	return sovStat(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (m *Stat) Unmarshal(data []byte) error {
-	l := len(data)
+func (this *Stat) String() string {
+	if this == nil {
+		return "nil"
+	}
+	keysForXattrs := make([]string, 0, len(this.Xattrs))
+	for k, _ := range this.Xattrs {
+		keysForXattrs = append(keysForXattrs, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForXattrs)
+	mapStringForXattrs := "map[string][]byte{"
+	for _, k := range keysForXattrs {
+		mapStringForXattrs += fmt.Sprintf("%v: %v,", k, this.Xattrs[k])
+	}
+	mapStringForXattrs += "}"
+	s := strings.Join([]string{`&Stat{`,
+		`Path:` + fmt.Sprintf("%v", this.Path) + `,`,
+		`Mode:` + fmt.Sprintf("%v", this.Mode) + `,`,
+		`Uid:` + fmt.Sprintf("%v", this.Uid) + `,`,
+		`Gid:` + fmt.Sprintf("%v", this.Gid) + `,`,
+		`Size_:` + fmt.Sprintf("%v", this.Size_) + `,`,
+		`ModTime:` + fmt.Sprintf("%v", this.ModTime) + `,`,
+		`Linkname:` + fmt.Sprintf("%v", this.Linkname) + `,`,
+		`Devmajor:` + fmt.Sprintf("%v", this.Devmajor) + `,`,
+		`Devminor:` + fmt.Sprintf("%v", this.Devminor) + `,`,
+		`Xattrs:` + mapStringForXattrs + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func valueToStringStat(v interface{}) string {
+	rv := reflect.ValueOf(v)
+	if rv.IsNil() {
+		return "nil"
+	}
+	pv := reflect.Indirect(rv).Interface()
+	return fmt.Sprintf("*%v", pv)
+}
+func (m *Stat) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
 		preIndex := iNdEx
@@ -230,7 +455,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 			if iNdEx >= l {
 				return io.ErrUnexpectedEOF
 			}
-			b := data[iNdEx]
+			b := dAtA[iNdEx]
 			iNdEx++
 			wire |= (uint64(b) & 0x7F) << shift
 			if b < 0x80 {
@@ -258,7 +483,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				stringLen |= (uint64(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -273,7 +498,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Path = string(data[iNdEx:postIndex])
+			m.Path = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 2:
 			if wireType != 0 {
@@ -287,7 +512,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				m.Mode |= (uint32(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -306,7 +531,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				m.Uid |= (uint32(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -325,7 +550,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				m.Gid |= (uint32(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -344,7 +569,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				m.Size_ |= (int64(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -363,7 +588,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				m.ModTime |= (int64(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -382,7 +607,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				stringLen |= (uint64(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -397,7 +622,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Linkname = string(data[iNdEx:postIndex])
+			m.Linkname = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 8:
 			if wireType != 0 {
@@ -411,7 +636,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				m.Devmajor |= (int64(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -430,7 +655,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				m.Devminor |= (int64(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -449,7 +674,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				msglen |= (int(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -471,7 +696,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				keykey |= (uint64(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -486,7 +711,7 @@ func (m *Stat) Unmarshal(data []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				stringLenmapkey |= (uint64(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -501,57 +726,62 @@ func (m *Stat) Unmarshal(data []byte) error {
 			if postStringIndexmapkey > l {
 				return io.ErrUnexpectedEOF
 			}
-			mapkey := string(data[iNdEx:postStringIndexmapkey])
+			mapkey := string(dAtA[iNdEx:postStringIndexmapkey])
 			iNdEx = postStringIndexmapkey
-			var valuekey uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowStat
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[iNdEx]
-				iNdEx++
-				valuekey |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			var mapbyteLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowStat
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[iNdEx]
-				iNdEx++
-				mapbyteLen |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intMapbyteLen := int(mapbyteLen)
-			if intMapbyteLen < 0 {
-				return ErrInvalidLengthStat
-			}
-			postbytesIndex := iNdEx + intMapbyteLen
-			if postbytesIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			mapvalue := make([]byte, mapbyteLen)
-			copy(mapvalue, data[iNdEx:postbytesIndex])
-			iNdEx = postbytesIndex
 			if m.Xattrs == nil {
 				m.Xattrs = make(map[string][]byte)
 			}
-			m.Xattrs[mapkey] = mapvalue
+			if iNdEx < postIndex {
+				var valuekey uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowStat
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					valuekey |= (uint64(b) & 0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				var mapbyteLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowStat
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					mapbyteLen |= (uint64(b) & 0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intMapbyteLen := int(mapbyteLen)
+				if intMapbyteLen < 0 {
+					return ErrInvalidLengthStat
+				}
+				postbytesIndex := iNdEx + intMapbyteLen
+				if postbytesIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				mapvalue := make([]byte, mapbyteLen)
+				copy(mapvalue, dAtA[iNdEx:postbytesIndex])
+				iNdEx = postbytesIndex
+				m.Xattrs[mapkey] = mapvalue
+			} else {
+				var mapvalue []byte
+				m.Xattrs[mapkey] = mapvalue
+			}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
-			skippy, err := skipStat(data[iNdEx:])
+			skippy, err := skipStat(dAtA[iNdEx:])
 			if err != nil {
 				return err
 			}
@@ -570,8 +800,8 @@ func (m *Stat) Unmarshal(data []byte) error {
 	}
 	return nil
 }
-func skipStat(data []byte) (n int, err error) {
-	l := len(data)
+func skipStat(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
 		var wire uint64
@@ -582,7 +812,7 @@ func skipStat(data []byte) (n int, err error) {
 			if iNdEx >= l {
 				return 0, io.ErrUnexpectedEOF
 			}
-			b := data[iNdEx]
+			b := dAtA[iNdEx]
 			iNdEx++
 			wire |= (uint64(b) & 0x7F) << shift
 			if b < 0x80 {
@@ -600,7 +830,7 @@ func skipStat(data []byte) (n int, err error) {
 					return 0, io.ErrUnexpectedEOF
 				}
 				iNdEx++
-				if data[iNdEx-1] < 0x80 {
+				if dAtA[iNdEx-1] < 0x80 {
 					break
 				}
 			}
@@ -617,7 +847,7 @@ func skipStat(data []byte) (n int, err error) {
 				if iNdEx >= l {
 					return 0, io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
+				b := dAtA[iNdEx]
 				iNdEx++
 				length |= (int(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -640,7 +870,7 @@ func skipStat(data []byte) (n int, err error) {
 					if iNdEx >= l {
 						return 0, io.ErrUnexpectedEOF
 					}
-					b := data[iNdEx]
+					b := dAtA[iNdEx]
 					iNdEx++
 					innerWire |= (uint64(b) & 0x7F) << shift
 					if b < 0x80 {
@@ -651,7 +881,7 @@ func skipStat(data []byte) (n int, err error) {
 				if innerWireType == 4 {
 					break
 				}
-				next, err := skipStat(data[start:])
+				next, err := skipStat(dAtA[start:])
 				if err != nil {
 					return 0, err
 				}
@@ -674,3 +904,28 @@ var (
 	ErrInvalidLengthStat = fmt.Errorf("proto: negative length found during unmarshaling")
 	ErrIntOverflowStat   = fmt.Errorf("proto: integer overflow")
 )
+
+func init() { proto.RegisterFile("stat.proto", fileDescriptorStat) }
+
+var fileDescriptorStat = []byte{
+	// 303 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x4c, 0x91, 0xb1, 0x4e, 0xf3, 0x30,
+	0x14, 0x85, 0x73, 0x9b, 0x36, 0x6d, 0xdd, 0xff, 0x97, 0x90, 0xc5, 0x70, 0xd5, 0xc1, 0x8a, 0x98,
+	0x32, 0xa0, 0x08, 0xc1, 0x02, 0x8c, 0x48, 0xbc, 0x40, 0x60, 0x60, 0x35, 0xb2, 0x29, 0xa6, 0x4d,
+	0x5c, 0x25, 0x4e, 0x45, 0x99, 0x78, 0x04, 0x1e, 0x83, 0xd7, 0x60, 0x63, 0xec, 0xc8, 0x48, 0xcc,
+	0xc2, 0xd8, 0x47, 0x40, 0x76, 0xda, 0xc2, 0x76, 0xce, 0x77, 0x7c, 0x65, 0x9d, 0x7b, 0x09, 0xa9,
+	0x0c, 0x37, 0xe9, 0xbc, 0xd4, 0x46, 0xd3, 0xe8, 0xae, 0xaa, 0x8d, 0x9a, 0x1d, 0xbc, 0x75, 0x48,
+	0xf7, 0xca, 0x70, 0x43, 0x29, 0xe9, 0xce, 0xb9, 0xb9, 0x47, 0x88, 0x21, 0x19, 0x66, 0x5e, 0x3b,
+	0x96, 0x6b, 0x21, 0xb1, 0x13, 0x43, 0xf2, 0x3f, 0xf3, 0x9a, 0xee, 0x91, 0xb0, 0x56, 0x02, 0x43,
+	0x8f, 0x9c, 0x74, 0x64, 0xa2, 0x04, 0x76, 0x5b, 0x32, 0x51, 0xc2, 0xcd, 0x55, 0xea, 0x49, 0x62,
+	0x2f, 0x86, 0x24, 0xcc, 0xbc, 0xa6, 0x48, 0xfa, 0xb9, 0x16, 0xd7, 0x2a, 0x97, 0x18, 0x79, 0xbc,
+	0xb5, 0x74, 0x4c, 0x06, 0x33, 0x55, 0x4c, 0x0b, 0x9e, 0x4b, 0xec, 0xfb, 0xdf, 0x77, 0xde, 0x65,
+	0x42, 0x2e, 0x72, 0xfe, 0xa0, 0x4b, 0x1c, 0xf8, 0xb1, 0x9d, 0xdf, 0x66, 0xaa, 0xd0, 0x25, 0x0e,
+	0x7f, 0x33, 0xe7, 0xe9, 0x11, 0x89, 0x1e, 0xb9, 0x31, 0x65, 0x85, 0x24, 0x0e, 0x93, 0xd1, 0x31,
+	0xa6, 0x6d, 0xdf, 0xd4, 0x75, 0x4d, 0x6f, 0x7c, 0x74, 0x59, 0x98, 0x72, 0x99, 0x6d, 0xde, 0x8d,
+	0xcf, 0xc8, 0xe8, 0x0f, 0x76, 0xa5, 0xa6, 0x72, 0xb9, 0xd9, 0x86, 0x93, 0x74, 0x9f, 0xf4, 0x16,
+	0x7c, 0x56, 0xb7, 0xdb, 0xf8, 0x97, 0xb5, 0xe6, 0xbc, 0x73, 0x0a, 0x17, 0x87, 0xab, 0x86, 0x05,
+	0x1f, 0x0d, 0x0b, 0xd6, 0x0d, 0x83, 0x67, 0xcb, 0xe0, 0xd5, 0x32, 0x78, 0xb7, 0x0c, 0x56, 0x96,
+	0xc1, 0xa7, 0x65, 0xf0, 0x6d, 0x59, 0xb0, 0xb6, 0x0c, 0x5e, 0xbe, 0x58, 0x70, 0x1b, 0xf9, 0x03,
+	0x9c, 0xfc, 0x04, 0x00, 0x00, 0xff, 0xff, 0x19, 0x97, 0x14, 0xf4, 0x8e, 0x01, 0x00, 0x00,
+}
