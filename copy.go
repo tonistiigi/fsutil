@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/docker/containerd/fs"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 )
@@ -135,22 +134,33 @@ func Receive(ctx context.Context, conn grpc.Stream, dest string) error {
 	r := &receiver{
 		ctx: ctx,
 		// cancel: cancel,
-		conn:  conn,
-		dest:  dest,
-		files: make(map[string]uint32),
-		pipes: make(map[uint32]*io.PipeWriter),
+		conn:     conn,
+		dest:     dest,
+		files:    make(map[string]uint32),
+		pipes:    make(map[uint32]*io.PipeWriter),
+		walkChan: make(chan *currentPath, 128),
+		walkDone: make(chan struct{}),
 	}
 	return r.run()
 }
 
 type receiver struct {
-	dest    string
-	ctx     context.Context
-	conn    grpc.Stream
-	files   map[string]uint32
-	pipes   map[uint32]*io.PipeWriter
-	mu      sync.RWMutex
-	muPipes sync.RWMutex
+	dest     string
+	ctx      context.Context
+	conn     grpc.Stream
+	files    map[string]uint32
+	pipes    map[uint32]*io.PipeWriter
+	mu       sync.RWMutex
+	muPipes  sync.RWMutex
+	walkChan chan *currentPath
+	walkDone chan struct{}
+}
+
+func (r *receiver) readStat(ctx context.Context, pathC chan<- *currentPath) error {
+	for p := range r.walkChan {
+		pathC <- p
+	}
+	return nil
 }
 
 func (r *receiver) run() error {
@@ -158,6 +168,12 @@ func (r *receiver) run() error {
 		asyncDataFunc: r.getAsyncDataFunc(),
 		dest:          r.dest,
 	}
+	//todo: add errgroup
+	go func() {
+		doubleWalkDiff(r.ctx, dw.HandleChange, GetWalkerFn(r.dest), r.readStat)
+		close(r.walkDone)
+	}()
+
 	var i uint32 = 0
 	for {
 		var p Packet
@@ -165,6 +181,8 @@ func (r *receiver) run() error {
 			switch p.Type {
 			case PACKET_STAT:
 				if p.Stat == nil {
+					close(r.walkChan)
+					<-r.walkDone
 					go func() {
 						dw.Wait()
 						r.conn.SendMsg(&Packet{Type: PACKET_FIN})
@@ -177,9 +195,7 @@ func (r *receiver) run() error {
 					r.mu.Unlock()
 				}
 				i++
-				if err := dw.HandleChange(fs.ChangeKindAdd, p.Stat.Path, &StatInfo{p.Stat}, nil); err != nil {
-					return err
-				}
+				r.walkChan <- &currentPath{path: p.Stat.Path, f: &StatInfo{p.Stat}}
 			case PACKET_DATA:
 				r.muPipes.Lock()
 				pw, ok := r.pipes[p.ID]
@@ -215,14 +231,15 @@ func (r *receiver) getAsyncDataFunc() writeToFunc {
 		}
 		delete(r.files, p)
 		r.mu.Unlock()
-		if err := r.conn.SendMsg(&Packet{Type: PACKET_REQ, ID: id}); err != nil {
-			return err
-		}
 
 		pr, pw := io.Pipe()
 		r.muPipes.Lock()
 		r.pipes[id] = pw
 		r.muPipes.Unlock()
+
+		if err := r.conn.SendMsg(&Packet{Type: PACKET_REQ, ID: id}); err != nil {
+			return err
+		}
 
 		buf := bufPool.Get().([]byte)
 		defer bufPool.Put(buf)

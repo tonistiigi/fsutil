@@ -17,7 +17,7 @@ import (
 func TestCopySimple(t *testing.T) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo file data1",
-		"ADD foo2 file data2",
+		"ADD foo2 file dat2",
 		"ADD zzz dir",
 		"ADD zzz/aa file data3",
 		"ADD zzz/bb dir",
@@ -69,7 +69,44 @@ symlink:../../ zzz/bb/cc/dd
 
 	dt, err = ioutil.ReadFile(filepath.Join(dest, "foo2"))
 	assert.NoError(t, err)
-	assert.Equal(t, "data2", string(dt))
+	assert.Equal(t, "dat2", string(dt))
+
+	err = ioutil.WriteFile(filepath.Join(d, "zzz/bb/cc/foo"), []byte("data5"), 0600)
+	assert.NoError(t, err)
+
+	err = os.RemoveAll(filepath.Join(d, "foo2"))
+	assert.NoError(t, err)
+
+	wg.Add(2)
+	go func() {
+		err1 = Send(context.Background(), s1, d, nil)
+		wg.Done()
+	}()
+	go func() {
+		err2 = Receive(context.Background(), s2, dest)
+		wg.Done()
+	}()
+
+	wg.Wait()
+	assert.NoError(t, err1)
+	assert.NoError(t, err2)
+
+	b = &bytes.Buffer{}
+	err = Walk(context.Background(), dest, nil, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, string(b.Bytes()), `file foo
+dir zzz
+file zzz/aa
+dir zzz/bb
+dir zzz/bb/cc
+symlink:../../ zzz/bb/cc/dd
+file zzz/bb/cc/foo
+`)
+
+	dt, err = ioutil.ReadFile(filepath.Join(dest, "zzz/bb/cc/foo"))
+	assert.NoError(t, err)
+	assert.Equal(t, "data5", string(dt))
 
 }
 
@@ -103,6 +140,8 @@ func (fc *fakeConn) SendMsg(m interface{}) error {
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
-	fc.sendChan <- p
+	p2 := *p
+	p2.Data = append([]byte{}, p2.Data...)
+	fc.sendChan <- &p2
 	return nil
 }

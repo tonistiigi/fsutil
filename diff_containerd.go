@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/docker/containerd/fs"
@@ -15,31 +14,32 @@ import (
 // Everything below is copied from containerd/fs. TODO: remove duplication
 
 type currentPath struct {
-	path     string
-	f        os.FileInfo
-	fullPath string
+	path string
+	f    os.FileInfo
+	//	fullPath string
 }
 
 // doubleWalkDiff walks both directories to create a diff
-func doubleWalkDiff(ctx context.Context, changeFn fs.ChangeFunc, a, b string) (err error) {
+func doubleWalkDiff(ctx context.Context, changeFn fs.ChangeFunc, a, b walkerFn) (err error) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	var (
-		c1 = make(chan *currentPath)
-		c2 = make(chan *currentPath)
+		c1 = make(chan *currentPath, 128)
+		c2 = make(chan *currentPath, 128)
 
 		f1, f2 *currentPath
 		rmdir  string
 	)
 	g.Go(func() error {
 		defer close(c1)
-		return pathWalk(ctx, a, c1)
+		return a(ctx, c1)
 	})
 	g.Go(func() error {
 		defer close(c2)
-		return pathWalk(ctx, b, c2)
+		return b(ctx, c2)
 	})
 	g.Go(func() error {
+	loop0:
 		for c1 != nil || c2 != nil {
 			if f1 == nil && c1 != nil {
 				f1, err = nextPath(ctx, c1)
@@ -99,7 +99,7 @@ func doubleWalkDiff(ctx context.Context, changeFn fs.ChangeFunc, a, b string) (e
 				f1 = nil
 				f2 = nil
 				if same {
-					continue
+					continue loop0
 				}
 			}
 			if err := changeFn(k, p, f, nil); err != nil {
@@ -137,18 +137,19 @@ func pathChange(lower, upper *currentPath) (fs.ChangeKind, string) {
 }
 
 func sameFile(f1, f2 *currentPath) (bool, error) {
-	if os.SameFile(f1.f, f2.f) {
-		return true, nil
-	}
+	// if os.SameFile(f1.f, f2.f) {
+	//   return true, nil
+	// }
 
-	equalStat, err := compareSysStat(f1.f.Sys(), f2.f.Sys())
-	if err != nil || !equalStat {
-		return equalStat, err
-	}
-
-	if eq, err := compareCapabilities(f1.fullPath, f2.fullPath); err != nil || !eq {
-		return eq, err
-	}
+	// todo: add these to os.FileInfo
+	// equalStat, err := compareSysStat(f1.f.Sys(), f2.f.Sys())
+	// if err != nil || !equalStat {
+	//   return equalStat, err
+	// }
+	//
+	// if eq, err := compareCapabilities(f1.fullPath, f2.fullPath); err != nil || !eq {
+	//   return eq, err
+	// }
 
 	// If not a directory also check size, modtime, and content
 	if !f1.f.IsDir() {
@@ -158,24 +159,24 @@ func sameFile(f1, f2 *currentPath) (bool, error) {
 		t1 := f1.f.ModTime()
 		t2 := f2.f.ModTime()
 
-		if t1.Unix() != t2.Unix() {
+		if t1.UnixNano() != t2.UnixNano() {
 			return false, nil
 		}
 
-		// If the timestamp may have been truncated in one of the
-		// files, check content of file to determine difference
-		if t1.Nanosecond() == 0 || t2.Nanosecond() == 0 {
-			if f1.f.Size() > 0 {
-				eq, err := compareFileContent(f1.fullPath, f2.fullPath)
-				if err != nil || !eq {
-					return eq, err
-				}
-			}
-		} else if t1.Nanosecond() != t2.Nanosecond() {
-			return false, nil
-		}
+		// // If the timestamp may have been truncated in one of the
+		// // files, check content of file to determine difference
+		// if t1.Nanosecond() == 0 || t2.Nanosecond() == 0 {
+		//   if f1.f.Size() > 0 {
+		//     eq, err := compareFileContent(f1.fullPath, f2.fullPath)
+		//     if err != nil || !eq {
+		//       return eq, err
+		//     }
+		//   }
+		// } else
+		// if t1.Nanosecond() != t2.Nanosecond() {
+		//       return false, nil
+		//     }
 	}
-
 	return true, nil
 }
 
@@ -195,7 +196,7 @@ func compareFileContent(p1, p2 string) (bool, error) {
 	}
 	defer f2.Close()
 
-	b1 := make([]byte, compareChuckSize)
+	b1 := make([]byte, compareChuckSize) // todo: pool
 	b2 := make([]byte, compareChuckSize)
 	for {
 		n1, err1 := f1.Read(b1)
@@ -213,40 +214,6 @@ func compareFileContent(p1, p2 string) (bool, error) {
 			return true, nil
 		}
 	}
-}
-
-func pathWalk(ctx context.Context, root string, pathC chan<- *currentPath) error {
-	return filepath.Walk(root, func(path string, f os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Rebase path
-		path, err = filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-
-		path = filepath.Join(string(os.PathSeparator), path)
-
-		// Skip root
-		if path == string(os.PathSeparator) {
-			return nil
-		}
-
-		p := &currentPath{
-			path:     path,
-			f:        f,
-			fullPath: filepath.Join(root, path),
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case pathC <- p:
-			return nil
-		}
-	})
 }
 
 func nextPath(ctx context.Context, pathC <-chan *currentPath) (*currentPath, error) {

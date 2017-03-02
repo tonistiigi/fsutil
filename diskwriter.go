@@ -13,6 +13,7 @@ import (
 	"github.com/docker/containerd/fs"
 	"github.com/pkg/errors"
 	"github.com/stevvooe/continuity/sysx"
+	"golang.org/x/sys/unix"
 )
 
 type writeToFunc func(context.Context, string, io.WriteCloser) error
@@ -148,18 +149,26 @@ func (dw *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo,
 	}
 
 	if asyncRequestFileData {
-		dw.requestAsyncFileData(p, destPath)
+		dw.requestAsyncFileData(p, destPath, stat)
 	}
 
 	return nil
 }
 
-func (dw *DiskWriter) requestAsyncFileData(p, dest string) {
+func (dw *DiskWriter) requestAsyncFileData(p, dest string, stat *Stat) {
 	dw.wg.Add(1)
 	go func() {
 		if err := dw.asyncDataFunc(dw.ctx, p, &lazyFileWriter{
 			dest: dest,
 		}); err != nil {
+			dw.mu.Lock()
+			if dw.err == nil {
+				dw.err = err
+				dw.cancel()
+			}
+			dw.mu.Unlock()
+		}
+		if err := chtimes(dest, stat.ModTime); err != nil { // TODO: check parent dirs
 			dw.mu.Lock()
 			if dw.err == nil {
 				dw.err = err
@@ -208,6 +217,22 @@ func rewriteMetadata(p string, stat *Stat) error {
 		if err := os.Chmod(p, os.FileMode(stat.Mode)); err != nil {
 			return errors.Wrapf(err, "failed to chown %s", p)
 		}
+	}
+
+	if err := chtimes(p, stat.ModTime); err != nil {
+		return errors.Wrapf(err, "failed to chtimes %s", p)
+	}
+
+	return nil
+}
+
+func chtimes(path string, un int64) error {
+	var utimes [2]unix.Timespec
+	utimes[0] = unix.NsecToTimespec(un)
+	utimes[1] = utimes[0]
+
+	if err := unix.UtimesNanoAt(unix.AT_FDCWD, path, utimes[0:], unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return errors.Wrap(err, "failed call to UtimesNanoAt")
 	}
 
 	return nil
