@@ -175,15 +175,6 @@ func minor(device uint64) uint64 {
 	return (device & 0xff) | ((device >> 12) & 0xfff00)
 }
 
-type currentPath struct {
-	os.FileInfo
-	path string
-}
-
-func (p *currentPath) Path() string {
-	return p.path
-}
-
 type StatInfo struct {
 	*Stat
 }
