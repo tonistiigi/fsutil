@@ -3,11 +3,15 @@ package bench
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
+
+	mathrand "math/rand"
 )
 
 func createTestDir(n int) (string, error) {
@@ -27,24 +31,11 @@ func createTestDir(n int) (string, error) {
 
 func fillTestDir(root string, items, n int) error {
 	if n <= items {
-		var size int64 = 64 * 1024
-		if s, err := strconv.ParseInt(os.Getenv("BENCH_FILE_SIZE"), 10, 64); err == nil {
-			size = s
-		}
-		b := make([]byte, size)
-		if _, err := rand.Read(b); err != nil {
-			return err
-		}
 		for i := 0; i < items; i++ {
 			fp := filepath.Join(root, randomID())
-			tf, err := os.Create(fp)
-			if err != nil {
+			if err := writeFile(fp); err != nil {
 				return err
 			}
-			if _, err := tf.Write(b); err != nil {
-				return err
-			}
-			tf.Close()
 		}
 	} else {
 		sub := n / items
@@ -69,4 +60,76 @@ func randomID() string {
 	b := make([]byte, 10)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+var buf []byte
+var once sync.Once
+
+func randBuf() []byte {
+	once.Do(func() {
+		var size int64 = 64 * 1024
+		if s, err := strconv.ParseInt(os.Getenv("BENCH_FILE_SIZE"), 10, 64); err == nil {
+			size = s
+		}
+		buf = make([]byte, size)
+		rand.Read(buf)
+	})
+	return buf
+}
+func writeFile(p string) error {
+	tf, err := os.Create(p)
+	if err != nil {
+		return err
+	}
+	if _, err := tf.Write(randBuf()); err != nil {
+		return err
+	}
+	return tf.Close()
+}
+
+func mutate(root string, n int) error {
+	del := n
+	add := n
+	mod := n
+	stop := errors.New("")
+
+	for {
+		if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if !info.IsDir() {
+				if mathrand.Intn(3) == 0 {
+					switch mathrand.Intn(3) {
+					case 0:
+						if del > 0 {
+							del--
+							os.RemoveAll(path)
+						}
+					case 1:
+						if add > 0 {
+							add--
+							fp := filepath.Join(filepath.Dir(path), randomID())
+							if err := writeFile(fp); err != nil {
+								return err
+							}
+						}
+					case 2:
+						if mod > 0 {
+							mod--
+							if err := writeFile(path); err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+			if add+mod+del == 0 {
+				return stop
+			}
+			return nil
+		}); err != nil {
+			if err == stop {
+				return nil
+			}
+			return err
+		}
+	}
 }

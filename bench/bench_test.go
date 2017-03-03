@@ -63,6 +63,59 @@ func benchmarkInitialCopy(b *testing.B, fn func(string, string) error, size int)
 	}
 }
 
+func benchmarkIncrementalCopy(b *testing.B, fn func(string, string) error, size int) {
+	b.StopTimer()
+	baseDir := os.Getenv("BENCH_BASE_DIR")
+	verify := os.Getenv("BENCH_VERIFY") == "1"
+	tmpdir, err := createTestDir(size)
+	if err != nil {
+		b.Error(err)
+	}
+	destdir, err := ioutil.TempDir(baseDir, "destdir")
+	if err != nil {
+		os.RemoveAll(tmpdir)
+		b.Error(err)
+	}
+	err = fn(tmpdir, destdir)
+	if err != nil {
+		b.Error(err)
+	}
+	defer os.RemoveAll(tmpdir)
+	defer os.RemoveAll(destdir)
+	for i := 0; i < b.N; i++ {
+		if err := mutate(tmpdir, 2); err != nil {
+			b.Error(err)
+		}
+		var m *continuity.Manifest
+		if verify {
+			ctx, err := continuity.NewContext(tmpdir)
+			if err != nil {
+				b.Error(err)
+			}
+			m, err = continuity.BuildManifest(ctx)
+			if err != nil {
+				b.Error(err)
+			}
+		}
+		b.StartTimer()
+		err = fn(tmpdir, destdir)
+		if err != nil {
+			b.Error(err)
+		}
+		b.StopTimer()
+		if verify {
+			ctx2, err := continuity.NewContext(destdir)
+			if err != nil {
+				b.Fatal(err)
+			}
+			err = continuity.VerifyManifest(ctx2, m)
+			if err != nil {
+				b.Error(err)
+			}
+		}
+	}
+}
+
 func copyWithTar(src, dest string) error {
 	return archive.CopyWithTar(src, dest)
 }
@@ -109,21 +162,21 @@ func BenchmarkCopyWithTar1000(b *testing.B) {
 	benchmarkInitialCopy(b, copyWithTar, 1000)
 }
 
-func BenchmarkChrootCopyWithTar10(b *testing.B) {
-	benchmarkInitialCopy(b, chrootCopyWithTar, 10)
-}
-
-func BenchmarkChrootCopyWithTar50(b *testing.B) {
-	benchmarkInitialCopy(b, chrootCopyWithTar, 50)
-}
-
-func BenchmarkChrootCopyWithTar200(b *testing.B) {
-	benchmarkInitialCopy(b, chrootCopyWithTar, 200)
-}
-
-func BenchmarkChrootCopyWithTar1000(b *testing.B) {
-	benchmarkInitialCopy(b, chrootCopyWithTar, 1000)
-}
+// func BenchmarkChrootCopyWithTar10(b *testing.B) {
+//   benchmarkInitialCopy(b, chrootCopyWithTar, 10)
+// }
+//
+// func BenchmarkChrootCopyWithTar50(b *testing.B) {
+//   benchmarkInitialCopy(b, chrootCopyWithTar, 50)
+// }
+//
+// func BenchmarkChrootCopyWithTar200(b *testing.B) {
+//   benchmarkInitialCopy(b, chrootCopyWithTar, 200)
+// }
+//
+// func BenchmarkChrootCopyWithTar1000(b *testing.B) {
+//   benchmarkInitialCopy(b, chrootCopyWithTar, 1000)
+// }
 
 func BenchmarkCPA10(b *testing.B) {
 	benchmarkInitialCopy(b, cpa, 10)
@@ -171,6 +224,45 @@ func BenchmarkDiffCopyProto200(b *testing.B) {
 
 func BenchmarkDiffCopyProto1000(b *testing.B) {
 	benchmarkInitialCopy(b, diffCopyProto, 1000)
+}
+
+func BenchmarkIncrementalDiffCopy10(b *testing.B) {
+	benchmarkIncrementalCopy(b, diffCopyReg, 10)
+}
+func BenchmarkIncrementalDiffCopy50(b *testing.B) {
+	benchmarkIncrementalCopy(b, diffCopyReg, 50)
+}
+func BenchmarkIncrementalDiffCopy200(b *testing.B) {
+	benchmarkIncrementalCopy(b, diffCopyReg, 200)
+}
+func BenchmarkIncrementalDiffCopy1000(b *testing.B) {
+	benchmarkIncrementalCopy(b, diffCopyReg, 1000)
+}
+
+func BenchmarkIncrementalCopyWithTar10(b *testing.B) {
+	benchmarkIncrementalCopy(b, copyWithTar, 10)
+}
+func BenchmarkIncrementalCopyWithTar50(b *testing.B) {
+	benchmarkIncrementalCopy(b, copyWithTar, 50)
+}
+func BenchmarkIncrementalCopyWithTar200(b *testing.B) {
+	benchmarkIncrementalCopy(b, copyWithTar, 200)
+}
+func BenchmarkIncrementalCopyWithTar1000(b *testing.B) {
+	benchmarkIncrementalCopy(b, copyWithTar, 1000)
+}
+
+func BenchmarkIncrementalRsync10(b *testing.B) {
+	benchmarkIncrementalCopy(b, rsync, 10)
+}
+func BenchmarkIncrementalRsync50(b *testing.B) {
+	benchmarkIncrementalCopy(b, rsync, 50)
+}
+func BenchmarkIncrementalRsync200(b *testing.B) {
+	benchmarkIncrementalCopy(b, rsync, 200)
+}
+func BenchmarkIncrementalRsync1000(b *testing.B) {
+	benchmarkIncrementalCopy(b, rsync, 1000)
 }
 
 func BenchmarkRsync10(b *testing.B) {
