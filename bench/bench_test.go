@@ -9,6 +9,7 @@ import (
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/reexec"
+	"github.com/stevvooe/continuity"
 )
 
 func init() {
@@ -16,24 +17,49 @@ func init() {
 }
 
 func benchmarkInitialCopy(b *testing.B, fn func(string, string) error, size int) {
+	baseDir := os.Getenv("BENCH_BASE_DIR")
+	verify := os.Getenv("BENCH_VERIFY") == "1"
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		tmpdir, err := createTestDir(size)
 		if err != nil {
 			b.Error(err)
 		}
-		destdir, err := ioutil.TempDir(os.Getenv("DIRRSYNC_BASE_DIR"), "destdir")
+		destdir, err := ioutil.TempDir(baseDir, "destdir")
 		if err != nil {
 			os.RemoveAll(tmpdir)
 			b.Error(err)
 		}
+
+		var m *continuity.Manifest
+		if verify {
+			ctx, err := continuity.NewContext(tmpdir)
+			if err != nil {
+				b.Error(err)
+			}
+			m, err = continuity.BuildManifest(ctx)
+			if err != nil {
+				b.Error(err)
+			}
+		}
 		b.StartTimer()
 		err = fn(tmpdir, destdir)
-		os.RemoveAll(tmpdir)
-		os.RemoveAll(destdir)
 		if err != nil {
 			b.Error(err)
 		}
+		b.StopTimer()
+		if verify {
+			ctx2, err := continuity.NewContext(destdir)
+			if err != nil {
+				b.Fatal(err)
+			}
+			err = continuity.VerifyManifest(ctx2, m)
+			if err != nil {
+				b.Error(err)
+			}
+		}
+		os.RemoveAll(tmpdir)
+		os.RemoveAll(destdir)
 	}
 }
 
@@ -46,17 +72,17 @@ func chrootCopyWithTar(src, dest string) error {
 }
 
 func cpa(src, dest string) error {
-	cmd := exec.Command("cp", "-a", src, dest)
+	cmd := exec.Command("cp", "-a", src+"/.", dest)
 	return cmd.Run()
 }
 
 func rsync(src, dest string) error {
-	cmd := exec.Command("rsync", "-a", "--del", src, dest)
+	cmd := exec.Command("rsync", "-a", "--del", src+"/.", dest)
 	return cmd.Run()
 }
 
 func gnutar(src, dest string) error {
-	tar := exec.Command("tar", "-cf", "-", src)
+	tar := exec.Command("tar", "-cf", "-", "-C", src, ".")
 	unpack := exec.Command("tar", "xf", "-", "-C", dest)
 	stdout, err := tar.StdoutPipe()
 	if err != nil {
