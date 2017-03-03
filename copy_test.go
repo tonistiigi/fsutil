@@ -31,7 +31,7 @@ func TestCopySimple(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(dest)
 
-	s1, s2 := sockPair()
+	s1, s2 := sockPairProto()
 
 	var err1 error
 	var err2 error
@@ -111,9 +111,15 @@ file zzz/bb/cc/foo
 }
 
 func sockPair() (grpc.Stream, grpc.Stream) {
-	c1 := make(chan *Packet, 5)
-	c2 := make(chan *Packet, 5)
+	c1 := make(chan *Packet, 32)
+	c2 := make(chan *Packet, 32)
 	return &fakeConn{c1, c2}, &fakeConn{c2, c1}
+}
+
+func sockPairProto() (grpc.Stream, grpc.Stream) {
+	c1 := make(chan []byte, 32)
+	c2 := make(chan []byte, 32)
+	return &fakeConnProto{c1, c2}, &fakeConnProto{c2, c1}
 }
 
 type fakeConn struct {
@@ -143,5 +149,36 @@ func (fc *fakeConn) SendMsg(m interface{}) error {
 	p2 := *p
 	p2.Data = append([]byte{}, p2.Data...)
 	fc.sendChan <- &p2
+	return nil
+}
+
+type fakeConnProto struct {
+	recvChan chan []byte
+	sendChan chan []byte
+}
+
+func (fc *fakeConnProto) Context() context.Context {
+	return context.TODO()
+}
+
+func (fc *fakeConnProto) RecvMsg(m interface{}) error {
+	p, ok := m.(*Packet)
+	if !ok {
+		return errors.Errorf("invalid msg: %#v", m)
+	}
+	dt := <-fc.recvChan
+	return p.Unmarshal(dt)
+}
+
+func (fc *fakeConnProto) SendMsg(m interface{}) error {
+	p, ok := m.(*Packet)
+	if !ok {
+		return errors.Errorf("invalid msg: %#v", m)
+	}
+	dt, err := p.Marshal()
+	if err != nil {
+		return err
+	}
+	fc.sendChan <- dt
 	return nil
 }

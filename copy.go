@@ -175,8 +175,10 @@ func (r *receiver) run() error {
 	}()
 
 	var i uint32 = 0
+
+	var p Packet
 	for {
-		var p Packet
+		p = Packet{Data: p.Data[:0]}
 		if err := r.conn.RecvMsg(&p); err == nil {
 			switch p.Type {
 			case PACKET_STAT:
