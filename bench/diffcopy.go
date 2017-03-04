@@ -6,11 +6,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
 	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 )
 
 func diffCopy(proto bool, src, dest string) error {
-	var s1, s2 grpc.Stream
+	var s1, s2 fsutil.Stream
 	if proto {
 		s1, s2 = sockPairProto()
 	} else {
@@ -47,9 +46,9 @@ func diffCopyReg(src, dest string) error {
 	return diffCopy(false, src, dest)
 }
 
-func sockPair() (grpc.Stream, grpc.Stream) {
-	c1 := make(chan *fsutil.Packet, 5)
-	c2 := make(chan *fsutil.Packet, 5)
+func sockPair() (fsutil.Stream, fsutil.Stream) {
+	c1 := make(chan *fsutil.Packet, 64)
+	c2 := make(chan *fsutil.Packet, 64)
 	return &fakeConn{c1, c2}, &fakeConn{c2, c1}
 }
 
@@ -83,9 +82,9 @@ func (fc *fakeConn) SendMsg(m interface{}) error {
 	return nil
 }
 
-func sockPairProto() (grpc.Stream, grpc.Stream) {
-	c1 := make(chan []byte, 1)
-	c2 := make(chan []byte, 1)
+func sockPairProto() (fsutil.Stream, fsutil.Stream) {
+	c1 := make(chan []byte, 64)
+	c2 := make(chan []byte, 64)
 	return &fakeConnProto{c1, c2}, &fakeConnProto{c2, c1}
 }
 

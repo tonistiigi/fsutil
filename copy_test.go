@@ -11,7 +11,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
-	"google.golang.org/grpc"
 )
 
 func TestCopySimple(t *testing.T) {
@@ -110,13 +109,13 @@ file zzz/bb/cc/foo
 
 }
 
-func sockPair() (grpc.Stream, grpc.Stream) {
+func sockPair() (Stream, Stream) {
 	c1 := make(chan *Packet, 32)
 	c2 := make(chan *Packet, 32)
 	return &fakeConn{c1, c2}, &fakeConn{c2, c1}
 }
 
-func sockPairProto() (grpc.Stream, grpc.Stream) {
+func sockPairProto() (Stream, Stream) {
 	c1 := make(chan []byte, 32)
 	c2 := make(chan []byte, 32)
 	return &fakeConnProto{c1, c2}, &fakeConnProto{c2, c1}
@@ -125,10 +124,6 @@ func sockPairProto() (grpc.Stream, grpc.Stream) {
 type fakeConn struct {
 	recvChan chan *Packet
 	sendChan chan *Packet
-}
-
-func (fc *fakeConn) Context() context.Context {
-	return context.TODO()
 }
 
 func (fc *fakeConn) RecvMsg(m interface{}) error {
@@ -155,10 +150,6 @@ func (fc *fakeConn) SendMsg(m interface{}) error {
 type fakeConnProto struct {
 	recvChan chan []byte
 	sendChan chan []byte
-}
-
-func (fc *fakeConnProto) Context() context.Context {
-	return context.TODO()
 }
 
 func (fc *fakeConnProto) RecvMsg(m interface{}) error {

@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	"google.golang.org/grpc"
 )
 
 var bufPool = sync.Pool{
@@ -17,7 +16,12 @@ var bufPool = sync.Pool{
 	},
 }
 
-func Send(ctx context.Context, conn grpc.Stream, root string, opt *WalkOpt) error {
+type Stream interface {
+	RecvMsg(interface{}) error
+	SendMsg(m interface{}) error
+}
+
+func Send(ctx context.Context, conn Stream, root string, opt *WalkOpt) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -34,7 +38,7 @@ func Send(ctx context.Context, conn grpc.Stream, root string, opt *WalkOpt) erro
 
 type sender struct {
 	ctx    context.Context
-	conn   grpc.Stream
+	conn   Stream
 	cancel func()
 	opt    *WalkOpt
 	root   string
@@ -113,7 +117,7 @@ func (s *sender) send() error {
 }
 
 type fileSender struct {
-	conn grpc.Stream
+	conn Stream
 	id   uint32
 }
 
@@ -127,7 +131,7 @@ func (fs *fileSender) Write(dt []byte) (int, error) {
 	return len(dt), nil
 }
 
-func Receive(ctx context.Context, conn grpc.Stream, dest string) error {
+func Receive(ctx context.Context, conn Stream, dest string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -147,7 +151,7 @@ func Receive(ctx context.Context, conn grpc.Stream, dest string) error {
 type receiver struct {
 	dest     string
 	ctx      context.Context
-	conn     grpc.Stream
+	conn     Stream
 	files    map[string]uint32
 	pipes    map[uint32]*io.PipeWriter
 	mu       sync.RWMutex
