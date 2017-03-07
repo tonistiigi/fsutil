@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
 )
 
@@ -28,7 +29,7 @@ func Send(ctx context.Context, conn Stream, root string, opt *WalkOpt, progressC
 	s := &sender{
 		ctx:        ctx,
 		cancel:     cancel,
-		conn:       conn,
+		conn:       &syncStream{Stream: conn},
 		root:       root,
 		opt:        opt,
 		files:      make(map[uint32]string),
@@ -145,6 +146,18 @@ func (fs *fileSender) Write(dt []byte) (int, error) {
 	return len(dt), nil
 }
 
+type syncStream struct {
+	Stream
+	mu sync.Mutex
+}
+
+func (ss *syncStream) SendMsg(m interface{}) error {
+	ss.mu.Lock()
+	err := ss.Stream.SendMsg(m)
+	ss.mu.Unlock()
+	return err
+}
+
 func Receive(ctx context.Context, conn Stream, dest string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -152,7 +165,7 @@ func Receive(ctx context.Context, conn Stream, dest string) error {
 	r := &receiver{
 		ctx: ctx,
 		// cancel: cancel,
-		conn:     conn,
+		conn:     &syncStream{Stream: conn},
 		dest:     dest,
 		files:    make(map[string]uint32),
 		pipes:    make(map[uint32]*io.PipeWriter),
@@ -236,6 +249,8 @@ func (r *receiver) run() error {
 			case PACKET_FIN:
 				return nil
 			}
+		} else if err != nil {
+			logrus.Error(err)
 		}
 	}
 	return nil
@@ -256,7 +271,6 @@ func (r *receiver) getAsyncDataFunc() writeToFunc {
 		r.muPipes.Lock()
 		r.pipes[id] = pw
 		r.muPipes.Unlock()
-
 		if err := r.conn.SendMsg(&Packet{Type: PACKET_REQ, ID: id}); err != nil {
 			return err
 		}
