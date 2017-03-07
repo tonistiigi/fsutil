@@ -21,7 +21,7 @@ type Stream interface {
 	SendMsg(m interface{}) error
 }
 
-func Send(ctx context.Context, conn Stream, root string, opt *WalkOpt) error {
+func Send(ctx context.Context, conn Stream, root string, opt *WalkOpt, progressCb func(int, bool)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -37,17 +37,20 @@ func Send(ctx context.Context, conn Stream, root string, opt *WalkOpt) error {
 }
 
 type sender struct {
-	ctx    context.Context
-	conn   Stream
-	cancel func()
-	opt    *WalkOpt
-	root   string
-	files  map[uint32]string
-	mu     sync.RWMutex
+	ctx             context.Context
+	conn            Stream
+	cancel          func()
+	opt             *WalkOpt
+	root            string
+	files           map[uint32]string
+	mu              sync.RWMutex
+	progressCb      func(int, bool)
+	progressCurrent int
 }
 
 func (s *sender) run() error {
 	go s.send()
+	defer s.updateProgress(0, true)
 	for {
 		var p Packet
 		if err := s.conn.RecvMsg(&p); err == nil {
@@ -60,6 +63,13 @@ func (s *sender) run() error {
 				return s.conn.SendMsg(&Packet{Type: PACKET_FIN})
 			}
 		}
+	}
+}
+
+func (s *sender) updateProgress(size int, last bool) {
+	if s.progressCb != nil {
+		s.progressCurrent += size
+		s.progressCb(s.progressCurrent, last)
 	}
 }
 
@@ -83,7 +93,7 @@ func (s *sender) sendFile(id uint32, p string) error {
 	if err == nil {
 		buf := bufPool.Get().([]byte)
 		defer bufPool.Put(buf)
-		if _, err := io.CopyBuffer(&fileSender{conn: s.conn, id: id}, f, buf); err != nil {
+		if _, err := io.CopyBuffer(&fileSender{sender: s, id: id}, f, buf); err != nil {
 			return err // TODO: handle error
 		}
 	}
@@ -108,6 +118,7 @@ func (s *sender) send() error {
 		s.files[i] = stat.Path
 		i++
 		s.mu.Unlock()
+		s.updateProgress(p.Size(), false)
 		return errors.Wrapf(s.conn.SendMsg(p), "failed to send stat %s", path)
 	})
 	if err != nil {
@@ -117,17 +128,19 @@ func (s *sender) send() error {
 }
 
 type fileSender struct {
-	conn Stream
-	id   uint32
+	sender *sender
+	id     uint32
 }
 
 func (fs *fileSender) Write(dt []byte) (int, error) {
 	if len(dt) == 0 {
 		return 0, nil
 	}
-	if err := fs.conn.SendMsg(&Packet{Type: PACKET_DATA, ID: fs.id, Data: dt}); err != nil {
+	p := &Packet{Type: PACKET_DATA, ID: fs.id, Data: dt}
+	if err := fs.sender.conn.SendMsg(p); err != nil {
 		return 0, err
 	}
+	fs.sender.updateProgress(p.Size(), false)
 	return len(dt), nil
 }
 

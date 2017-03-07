@@ -37,7 +37,7 @@ func TestCopySimple(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		err1 = Send(context.Background(), s1, d, nil)
+		err1 = Send(context.Background(), s1, d, nil, nil)
 		wg.Done()
 	}()
 	go func() {
@@ -78,7 +78,7 @@ symlink:../../ zzz/bb/cc/dd
 
 	wg.Add(2)
 	go func() {
-		err1 = Send(context.Background(), s1, d, nil)
+		err1 = Send(context.Background(), s1, d, nil, nil)
 		wg.Done()
 	}()
 	go func() {
