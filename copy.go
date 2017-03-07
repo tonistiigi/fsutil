@@ -26,12 +26,13 @@ func Send(ctx context.Context, conn Stream, root string, opt *WalkOpt, progressC
 	defer cancel()
 
 	s := &sender{
-		ctx:    ctx,
-		cancel: cancel,
-		conn:   conn,
-		root:   root,
-		opt:    opt,
-		files:  make(map[uint32]string),
+		ctx:        ctx,
+		cancel:     cancel,
+		conn:       conn,
+		root:       root,
+		opt:        opt,
+		files:      make(map[uint32]string),
+		progressCb: progressCb,
 	}
 	return s.run()
 }
