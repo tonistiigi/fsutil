@@ -188,8 +188,16 @@ type receiver struct {
 }
 
 func (r *receiver) readStat(ctx context.Context, pathC chan<- *currentPath) error {
-	for p := range r.walkChan {
-		pathC <- p
+	for {
+		select {
+		case p, ok := <-r.walkChan:
+			if !ok {
+				return nil
+			}
+			pathC <- p
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	return nil
 }
@@ -201,7 +209,10 @@ func (r *receiver) run() error {
 	}
 	//todo: add errgroup
 	go func() {
-		doubleWalkDiff(r.ctx, dw.HandleChange, GetWalkerFn(r.dest), r.readStat)
+		err := doubleWalkDiff(r.ctx, dw.HandleChange, GetWalkerFn(r.dest), r.readStat)
+		if err != nil {
+			logrus.Errorf("walkerr %s", err)
+		}
 		close(r.walkDone)
 	}()
 
