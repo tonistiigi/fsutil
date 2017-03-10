@@ -5,12 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/pkg/errors"
-	"github.com/stevvooe/continuity/sysx"
 )
 
 type WalkOpt struct {
@@ -99,36 +97,16 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 
 	passedFilter:
-		s, ok := fi.Sys().(*syscall.Stat_t)
-		if !ok {
-			return errors.New("linux only atm")
-		}
-
 		stat := &Stat{
 			Path:    path,
 			Mode:    uint32(fi.Mode()),
-			Uid:     s.Uid,
-			Gid:     s.Gid,
 			Size_:   fi.Size(),
 			ModTime: fi.ModTime().UnixNano(),
 		}
 
+		setUnixOpt(fi, stat, path, seenFiles)
+
 		if !fi.IsDir() {
-			if s.Mode&syscall.S_IFBLK != 0 ||
-				s.Mode&syscall.S_IFCHR != 0 {
-				stat.Devmajor = int64(major(uint64(s.Rdev)))
-				stat.Devminor = int64(minor(uint64(s.Rdev)))
-			}
-
-			ino := s.Ino
-			if s.Nlink > 1 {
-				if oldpath, ok := seenFiles[ino]; ok {
-					stat.Linkname = oldpath
-					stat.Size_ = 0
-				}
-			}
-			seenFiles[ino] = path
-
 			if fi.Mode()&os.ModeSymlink != 0 {
 				link, err := os.Readlink(origpath)
 				if err != nil {
@@ -137,19 +115,8 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 				stat.Linkname = link
 			}
 		}
-		xattrs, err := sysx.LListxattr(origpath)
-		if err != nil {
+		if err := loadXattr(origpath, stat); err != nil {
 			return errors.Wrapf(err, "failed to xattr %s", path)
-		}
-		if len(xattrs) > 0 {
-			m := make(map[string][]byte)
-			for _, key := range xattrs {
-				v, err := sysx.LGetxattr(origpath, key)
-				if err == nil {
-					m[key] = v
-				}
-			}
-			stat.Xattrs = m
 		}
 
 		select {
@@ -162,14 +129,6 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 		return nil
 	})
-}
-
-func major(device uint64) uint64 {
-	return (device >> 8) & 0xfff
-}
-
-func minor(device uint64) uint64 {
-	return (device & 0xff) | ((device >> 12) & 0xfff00)
 }
 
 type StatInfo struct {
