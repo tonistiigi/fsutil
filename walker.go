@@ -31,12 +31,9 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		return errors.Errorf("%s is not a directory", root)
 	}
 
-	var patterns []string
-	var patDirs [][]string
-	var exceptions bool
+	var pm *fileutils.PatternMatcher
 	if opt != nil && opt.ExcludePatterns != nil {
-		patterns, patDirs, exceptions, err = fileutils.CleanPatterns(opt.ExcludePatterns)
-
+		pm, err = fileutils.NewPatternMatcher(opt.ExcludePatterns)
 		if err != nil {
 			return errors.Wrapf(err, "invalid excludepaths %s", opt.ExcludePatterns)
 		}
@@ -73,24 +70,24 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 					return nil
 				}
 			}
-			if opt.ExcludePatterns != nil {
-				m, err := fileutils.OptimizedMatches(path, patterns, patDirs)
+			if pm != nil {
+				m, err := pm.Matches(path)
 				if err != nil {
 					return errors.Wrap(err, "failed to match excludepatterns")
 				}
 
 				if m {
 					if fi.IsDir() {
-						if !exceptions {
+						if !pm.Exclusions() {
 							return filepath.SkipDir
 						}
 						dirSlash := path + string(filepath.Separator)
-						for _, pat := range patterns {
-							if pat[0] != '!' {
+						for _, pat := range pm.Patterns() {
+							if !pat.Exclusion() {
 								continue
 							}
-							pat = pat[1:] + string(filepath.Separator)
-							if strings.HasPrefix(pat, dirSlash) {
+							patStr := pat.String() + string(filepath.Separator)
+							if strings.HasPrefix(patStr, dirSlash) {
 								goto passedFilter
 							}
 						}
