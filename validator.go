@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/docker/containerd/fs"
 	"github.com/pkg/errors"
 )
 
@@ -19,7 +18,7 @@ type Validator struct {
 	parentDirs []parent
 }
 
-func (v *Validator) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, err error) error {
+func (v *Validator) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) error {
 	if err != nil {
 		return err
 	}
@@ -52,7 +51,7 @@ func (v *Validator) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, e
 		return errors.Errorf("changes out of order: %q %q", p, filepath.Join(v.parentDirs[i].dir, v.parentDirs[i].last))
 	}
 	v.parentDirs[i].last = base
-	if kind != fs.ChangeKindDelete && fi.IsDir() {
+	if kind != ChangeKindDelete && fi.IsDir() {
 		v.parentDirs = append(v.parentDirs, parent{
 			dir:  filepath.Join(dir, base),
 			last: "",

@@ -3,13 +3,11 @@ package fsutil
 import (
 	"context"
 	"os"
-
-	"github.com/docker/containerd/fs"
 )
 
 type walkerFn func(ctx context.Context, pathC chan<- *currentPath) error
 
-func Changes(ctx context.Context, a, b walkerFn, changeFn fs.ChangeFunc) error {
+func Changes(ctx context.Context, a, b walkerFn, changeFn ChangeFunc) error {
 	return nil
 }
 

@@ -1,3 +1,5 @@
+// +build linux
+
 package fsutil
 
 import (
@@ -11,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/containerd/fs"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -148,7 +149,7 @@ func TestWalkerWriterAsync(t *testing.T) {
 
 func readAsAdd(f HandleChangeFn) filepath.WalkFunc {
 	return func(path string, fi os.FileInfo, err error) error {
-		return f(fs.ChangeKindAdd, path, fi, err)
+		return f(ChangeKindAdd, path, fi, err)
 	}
 }
 

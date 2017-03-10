@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/docker/containerd/fs"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -148,7 +147,7 @@ func checkValid(inp []*change) error {
 }
 
 type change struct {
-	kind fs.ChangeKind
+	kind ChangeKind
 	path string
 	fi   os.FileInfo
 	data string
@@ -170,11 +169,11 @@ func parseChange(str string) *change {
 	c := &change{}
 	switch f[0] {
 	case "ADD":
-		c.kind = fs.ChangeKindAdd
+		c.kind = ChangeKindAdd
 	case "CHG":
-		c.kind = fs.ChangeKindModify
+		c.kind = ChangeKindModify
 	case "DEL":
-		c.kind = fs.ChangeKindDelete
+		c.kind = ChangeKindDelete
 	default:
 		panic(errStr)
 	}

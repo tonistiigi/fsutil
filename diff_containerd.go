@@ -7,11 +7,34 @@ import (
 	"os"
 	"strings"
 
-	"github.com/docker/containerd/fs"
 	"golang.org/x/sync/errgroup"
 )
 
 // Everything below is copied from containerd/fs. TODO: remove duplication
+
+// Const redefined because containerd/fs doesn't build on !linux
+
+// ChangeKind is the type of modification that
+// a change is making.
+type ChangeKind int
+
+const (
+	// ChangeKindAdd represents an addition of
+	// a file
+	ChangeKindAdd = iota
+
+	// ChangeKindModify represents a change to
+	// an existing file
+	ChangeKindModify
+
+	// ChangeKindDelete represents a delete of
+	// a file
+	ChangeKindDelete
+)
+
+// ChangeFunc is the type of function called for each change
+// computed during a directory changes calculation.
+type ChangeFunc func(ChangeKind, string, os.FileInfo, error) error
 
 type currentPath struct {
 	path string
@@ -20,7 +43,7 @@ type currentPath struct {
 }
 
 // doubleWalkDiff walks both directories to create a diff
-func doubleWalkDiff(ctx context.Context, changeFn fs.ChangeFunc, a, b walkerFn) (err error) {
+func doubleWalkDiff(ctx context.Context, changeFn ChangeFunc, a, b walkerFn) (err error) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	var (
@@ -67,13 +90,13 @@ func doubleWalkDiff(ctx context.Context, changeFn fs.ChangeFunc, a, b walkerFn) 
 			var f os.FileInfo
 			k, p := pathChange(f1, f2)
 			switch k {
-			case fs.ChangeKindAdd:
+			case ChangeKindAdd:
 				if rmdir != "" {
 					rmdir = ""
 				}
 				f = f2.f
 				f2 = nil
-			case fs.ChangeKindDelete:
+			case ChangeKindDelete:
 				// Check if this file is already removed by being
 				// under of a removed directory
 				if rmdir != "" && strings.HasPrefix(f1.path, rmdir) {
@@ -85,7 +108,7 @@ func doubleWalkDiff(ctx context.Context, changeFn fs.ChangeFunc, a, b walkerFn) 
 					rmdir = ""
 				}
 				f1 = nil
-			case fs.ChangeKindModify:
+			case ChangeKindModify:
 				same, err := sameFile(f1, f2)
 				if err != nil {
 					return err
@@ -112,27 +135,27 @@ func doubleWalkDiff(ctx context.Context, changeFn fs.ChangeFunc, a, b walkerFn) 
 	return g.Wait()
 }
 
-func pathChange(lower, upper *currentPath) (fs.ChangeKind, string) {
+func pathChange(lower, upper *currentPath) (ChangeKind, string) {
 	if lower == nil {
 		if upper == nil {
 			panic("cannot compare nil paths")
 		}
-		return fs.ChangeKindAdd, upper.path
+		return ChangeKindAdd, upper.path
 	}
 	if upper == nil {
-		return fs.ChangeKindDelete, lower.path
+		return ChangeKindDelete, lower.path
 	}
 	// TODO: compare by directory
 
 	switch i := strings.Compare(lower.path, upper.path); {
 	case i < 0:
 		// File in lower that is not in upper
-		return fs.ChangeKindDelete, lower.path
+		return ChangeKindDelete, lower.path
 	case i > 0:
 		// File in upper that is not in lower
-		return fs.ChangeKindAdd, upper.path
+		return ChangeKindAdd, upper.path
 	default:
-		return fs.ChangeKindModify, upper.path
+		return ChangeKindModify, upper.path
 	}
 }
 

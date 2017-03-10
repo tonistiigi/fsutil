@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/docker/containerd/fs"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
@@ -106,7 +105,7 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 		}
 	}()
 	for _, c := range inp {
-		if c.kind == fs.ChangeKindAdd {
+		if c.kind == ChangeKindAdd {
 			p := filepath.Join(tmpdir, c.path)
 			stat, ok := c.fi.Sys().(*Stat)
 			if !ok {

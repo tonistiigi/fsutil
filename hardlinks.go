@@ -3,7 +3,6 @@ package fsutil
 import (
 	"os"
 
-	"github.com/docker/containerd/fs"
 	"github.com/pkg/errors"
 )
 
@@ -13,7 +12,7 @@ type Hardlinks struct {
 	seenFiles map[string]struct{}
 }
 
-func (v *Hardlinks) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, err error) error {
+func (v *Hardlinks) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) error {
 	if err != nil {
 		return err
 	}
@@ -22,7 +21,7 @@ func (v *Hardlinks) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, e
 		v.seenFiles = make(map[string]struct{})
 	}
 
-	if kind == fs.ChangeKindDelete {
+	if kind == ChangeKindDelete {
 		return nil
 	}
 

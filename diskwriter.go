@@ -1,3 +1,5 @@
+// +build linux
+
 package fsutil
 
 import (
@@ -10,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/docker/containerd/fs"
 	"github.com/pkg/errors"
 	"github.com/stevvooe/continuity/sysx"
 	"golang.org/x/sys/unix"
@@ -37,7 +38,7 @@ func (dw *DiskWriter) Wait() error {
 	return dw.err
 }
 
-func (dw *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo, err error) (retErr error) {
+func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) (retErr error) {
 	if err != nil {
 		return err
 	}
@@ -61,7 +62,7 @@ func (dw *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo,
 
 	destPath := filepath.Join(dw.dest, p)
 
-	if kind == fs.ChangeKindDelete {
+	if kind == ChangeKindDelete {
 		// todo: no need to validate if diff is trusted but is it always?
 		if err := os.RemoveAll(destPath); err != nil {
 			return errors.Wrapf(err, "failed to remove: %s", destPath)
@@ -78,7 +79,7 @@ func (dw *DiskWriter) HandleChange(kind fs.ChangeKind, p string, fi os.FileInfo,
 	oldFi, err := os.Lstat(destPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			if kind != fs.ChangeKindAdd {
+			if kind != ChangeKindAdd {
 				return errors.Wrapf(err, "invalid addition: %s", destPath)
 			}
 			rename = false
