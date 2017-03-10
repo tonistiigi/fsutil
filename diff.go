@@ -1,8 +1,9 @@
 package fsutil
 
 import (
-	"context"
 	"os"
+
+	"golang.org/x/net/context"
 )
 
 type walkerFn func(ctx context.Context, pathC chan<- *currentPath) error

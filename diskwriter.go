@@ -3,7 +3,8 @@
 package fsutil
 
 import (
-	"context"
+	"encoding/hex"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stevvooe/continuity/sysx"
+	"golang.org/x/net/context"
 	"golang.org/x/sys/unix"
 )
 
@@ -24,11 +26,12 @@ type DiskWriter struct {
 	syncDataFunc  writeToFunc
 	dest          string
 
-	wg     sync.WaitGroup
-	mu     sync.RWMutex
-	err    error
-	ctx    context.Context
-	cancel func()
+	wg           sync.WaitGroup
+	mu           sync.RWMutex
+	err          error
+	ctx          context.Context
+	cancel       func()
+	notifyHashed func(ChangeKind, string, os.FileInfo, error) error
 }
 
 func (dw *DiskWriter) Wait() error {
@@ -67,6 +70,11 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		if err := os.RemoveAll(destPath); err != nil {
 			return errors.Wrapf(err, "failed to remove: %s", destPath)
 		}
+		if dw.notifyHashed != nil {
+			if err := dw.notifyHashed(kind, p, nil, nil); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 
@@ -103,6 +111,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 	// todo: combine with hardlink validation
 
 	asyncRequestFileData := false
+	var hw *hashedWriter
 
 	switch {
 	case fi.IsDir():
@@ -127,7 +136,12 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 			return errors.Wrapf(err, "failed to create %s", newPath)
 		}
 		if dw.syncDataFunc != nil {
-			if err := dw.syncDataFunc(dw.ctx, p, file); err != nil {
+			var h io.WriteCloser = file
+			if dw.notifyHashed != nil {
+				hw = newHashWriter(fi, file)
+				h = hw
+			}
+			if err := dw.syncDataFunc(dw.ctx, p, h); err != nil {
 				return errors.Wrapf(err, "failed to write %s", newPath)
 			}
 			break
@@ -151,6 +165,14 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 
 	if asyncRequestFileData {
 		dw.requestAsyncFileData(p, destPath, stat)
+	} else {
+		if hw == nil {
+			hw = newHashWriter(fi, nil)
+			hw.Close()
+		}
+		if err := dw.notifyHashed(kind, p, hw, nil); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -158,27 +180,80 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 
 func (dw *DiskWriter) requestAsyncFileData(p, dest string, stat *Stat) {
 	dw.wg.Add(1)
-	go func() {
-		if err := dw.asyncDataFunc(dw.ctx, p, &lazyFileWriter{
-			dest: dest,
-		}); err != nil {
-			dw.mu.Lock()
-			if dw.err == nil {
-				dw.err = err
-				dw.cancel()
+	go func() (retErr error) {
+		defer func() {
+			if retErr != nil {
+				dw.mu.Lock()
+				if dw.err == nil {
+					dw.err = retErr
+					dw.cancel()
+				}
+				dw.mu.Unlock()
 			}
-			dw.mu.Unlock()
+		}()
+		var hw *hashedWriter
+		var h io.WriteCloser = &lazyFileWriter{
+			dest: dest,
+		}
+		if dw.notifyHashed != nil {
+			hw = newHashWriter(&StatInfo{stat}, h)
+			h = hw
+		}
+		if err := dw.asyncDataFunc(dw.ctx, p, h); err != nil {
+			return err
+		}
+		if hw != nil {
+			if err := dw.notifyHashed(ChangeKindAdd, p, hw, nil); err != nil {
+				return err
+			}
 		}
 		if err := chtimes(dest, stat.ModTime); err != nil { // TODO: check parent dirs
-			dw.mu.Lock()
-			if dw.err == nil {
-				dw.err = err
-				dw.cancel()
-			}
-			dw.mu.Unlock()
+			return err
 		}
 		dw.wg.Done()
+		return nil
 	}()
+}
+
+type hashedWriter struct {
+	os.FileInfo
+	io.Writer
+	h   hash.Hash
+	w   io.WriteCloser
+	sum string
+}
+
+func newHashWriter(fi os.FileInfo, w io.WriteCloser) *hashedWriter {
+	h, _ := NewTarsumHash(fi)
+	hw := &hashedWriter{
+		FileInfo: fi,
+		Writer:   io.MultiWriter(w, h),
+		h:        h,
+		w:        w,
+	}
+	return hw
+}
+
+func (hw *hashedWriter) Close() error {
+	hw.sum = string(hex.EncodeToString(hw.h.Sum(nil)))
+	if hw.w != nil {
+		return hw.w.Close()
+	}
+	return nil
+}
+
+func (hw *hashedWriter) Hash() string {
+	return hw.sum
+}
+
+func (hw *hashedWriter) SetHash(s string) {
+}
+
+// Hashed defines an extra method intended for implementations of os.FileInfo.
+type Hashed interface {
+	// Hash returns the hash of a file.
+	Hash() string
+	SetHash(string)
 }
 
 type lazyFileWriter struct {

@@ -1,7 +1,6 @@
 package fsutil
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/pkg/errors"
+	"golang.org/x/net/context"
 )
 
 type WalkOpt struct {

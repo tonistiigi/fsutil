@@ -4,7 +4,6 @@ package fsutil
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"io/ioutil"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/net/context"
 )
 
 func TestWriterSimple(t *testing.T) {

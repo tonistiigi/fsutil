@@ -3,7 +3,6 @@
 package fsutil
 
 import (
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
+	"golang.org/x/net/context"
 )
 
 var bufPool = sync.Pool{
@@ -160,33 +160,35 @@ func (ss *syncStream) SendMsg(m interface{}) error {
 	return err
 }
 
-func Receive(ctx context.Context, conn Stream, dest string) error {
+func Receive(ctx context.Context, conn Stream, dest string, notifyHashed ChangeFunc) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	r := &receiver{
 		ctx: ctx,
 		// cancel: cancel,
-		conn:     &syncStream{Stream: conn},
-		dest:     dest,
-		files:    make(map[string]uint32),
-		pipes:    make(map[uint32]*io.PipeWriter),
-		walkChan: make(chan *currentPath, 128),
-		walkDone: make(chan struct{}),
+		conn:         &syncStream{Stream: conn},
+		dest:         dest,
+		files:        make(map[string]uint32),
+		pipes:        make(map[uint32]*io.PipeWriter),
+		walkChan:     make(chan *currentPath, 128),
+		walkDone:     make(chan struct{}),
+		notifyHashed: notifyHashed,
 	}
 	return r.run()
 }
 
 type receiver struct {
-	dest     string
-	ctx      context.Context
-	conn     Stream
-	files    map[string]uint32
-	pipes    map[uint32]*io.PipeWriter
-	mu       sync.RWMutex
-	muPipes  sync.RWMutex
-	walkChan chan *currentPath
-	walkDone chan struct{}
+	dest         string
+	ctx          context.Context
+	conn         Stream
+	files        map[string]uint32
+	pipes        map[uint32]*io.PipeWriter
+	mu           sync.RWMutex
+	muPipes      sync.RWMutex
+	walkChan     chan *currentPath
+	walkDone     chan struct{}
+	notifyHashed ChangeFunc
 }
 
 func (r *receiver) readStat(ctx context.Context, pathC chan<- *currentPath) error {
@@ -208,6 +210,7 @@ func (r *receiver) run() error {
 	dw := DiskWriter{
 		asyncDataFunc: r.getAsyncDataFunc(),
 		dest:          r.dest,
+		notifyHashed:  r.notifyHashed,
 	}
 	//todo: add errgroup
 	go func() {

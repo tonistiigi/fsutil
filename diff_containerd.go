@@ -2,11 +2,11 @@ package fsutil
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"os"
 	"strings"
 
+	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
 )
 
