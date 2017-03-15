@@ -165,7 +165,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 
 	if asyncRequestFileData {
 		dw.requestAsyncFileData(p, destPath, stat)
-	} else {
+	} else if dw.notifyHashed != nil {
 		if hw == nil {
 			hw = newHashWriter(fi, nil)
 			hw.Close()
@@ -180,6 +180,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 
 func (dw *DiskWriter) requestAsyncFileData(p, dest string, stat *Stat) {
 	dw.wg.Add(1)
+	// todo: limit worker threads
 	go func() (retErr error) {
 		defer func() {
 			if retErr != nil {
