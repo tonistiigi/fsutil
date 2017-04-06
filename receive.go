@@ -7,7 +7,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
@@ -77,47 +76,46 @@ func (r *receiver) run(ctx context.Context) error {
 		var p Packet
 		for {
 			p = Packet{Data: p.Data[:0]}
-			if err := r.conn.RecvMsg(&p); err == nil {
-				switch p.Type {
-				case PACKET_STAT:
-					if p.Stat == nil {
-						close(r.walkChan)
-						<-walkDone
-						go func() {
-							dw.Wait()
-							r.conn.SendMsg(&Packet{Type: PACKET_FIN})
-						}()
-						break
-					}
-					if os.FileMode(p.Stat.Mode)&(os.ModeDir|os.ModeSymlink|os.ModeNamedPipe|os.ModeDevice) == 0 {
-						r.mu.Lock()
-						r.files[p.Stat.Path] = i
-						r.mu.Unlock()
-					}
-					i++
-					r.walkChan <- &currentPath{path: p.Stat.Path, f: &StatInfo{p.Stat}}
-				case PACKET_DATA:
-					r.muPipes.Lock()
-					pw, ok := r.pipes[p.ID]
-					if !ok {
-						r.muPipes.Unlock()
-						return errors.Errorf("invalid file request %s", p.ID)
-					}
-					r.muPipes.Unlock()
-					if len(p.Data) == 0 {
-						if err := pw.Close(); err != nil {
-							return err
-						}
-					} else {
-						if _, err := pw.Write(p.Data); err != nil {
-							return err
-						}
-					}
-				case PACKET_FIN:
-					return nil
+			if err := r.conn.RecvMsg(&p); err != nil {
+				return err
+			}
+			switch p.Type {
+			case PACKET_STAT:
+				if p.Stat == nil {
+					close(r.walkChan)
+					<-walkDone
+					go func() {
+						dw.Wait()
+						r.conn.SendMsg(&Packet{Type: PACKET_FIN})
+					}()
+					break
 				}
-			} else if err != nil {
-				logrus.Error(err)
+				if os.FileMode(p.Stat.Mode)&(os.ModeDir|os.ModeSymlink|os.ModeNamedPipe|os.ModeDevice) == 0 {
+					r.mu.Lock()
+					r.files[p.Stat.Path] = i
+					r.mu.Unlock()
+				}
+				i++
+				r.walkChan <- &currentPath{path: p.Stat.Path, f: &StatInfo{p.Stat}}
+			case PACKET_DATA:
+				r.muPipes.Lock()
+				pw, ok := r.pipes[p.ID]
+				if !ok {
+					r.muPipes.Unlock()
+					return errors.Errorf("invalid file request %s", p.ID)
+				}
+				r.muPipes.Unlock()
+				if len(p.Data) == 0 {
+					if err := pw.Close(); err != nil {
+						return err
+					}
+				} else {
+					if _, err := pw.Write(p.Data); err != nil {
+						return err
+					}
+				}
+			case PACKET_FIN:
+				return nil
 			}
 		}
 	})

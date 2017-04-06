@@ -56,15 +56,16 @@ func (s *sender) run() error {
 	defer s.updateProgress(0, true)
 	for {
 		var p Packet
-		if err := s.conn.RecvMsg(&p); err == nil {
-			switch p.Type {
-			case PACKET_REQ:
-				if err := s.queue(p.ID); err != nil {
-					return err
-				}
-			case PACKET_FIN:
-				return s.conn.SendMsg(&Packet{Type: PACKET_FIN})
+		if err := s.conn.RecvMsg(&p); err != nil {
+			return err
+		}
+		switch p.Type {
+		case PACKET_REQ:
+			if err := s.queue(p.ID); err != nil {
+				return err
 			}
+		case PACKET_FIN:
+			return s.conn.SendMsg(&Packet{Type: PACKET_FIN})
 		}
 	}
 }

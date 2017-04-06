@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
 	"github.com/stevvooe/continuity/sysx"
 	"golang.org/x/net/context"
@@ -138,7 +139,9 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		if dw.syncDataFunc != nil {
 			var h io.WriteCloser = file
 			if dw.notifyHashed != nil {
-				hw = newHashWriter(fi, file)
+				if hw, err = newHashWriter(p, fi, file); err != nil {
+					return err
+				}
 				h = hw
 			}
 			if err := dw.syncDataFunc(dw.ctx, p, h); err != nil {
@@ -167,7 +170,9 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		dw.requestAsyncFileData(p, destPath, stat)
 	} else if dw.notifyHashed != nil {
 		if hw == nil {
-			hw = newHashWriter(fi, nil)
+			if hw, err = newHashWriter(p, fi, nil); err != nil {
+				return err
+			}
 			hw.Close()
 		}
 		if err := dw.notifyHashed(kind, p, hw, nil); err != nil {
@@ -197,7 +202,10 @@ func (dw *DiskWriter) requestAsyncFileData(p, dest string, stat *Stat) {
 			dest: dest,
 		}
 		if dw.notifyHashed != nil {
-			hw = newHashWriter(&StatInfo{stat}, h)
+			var err error
+			if hw, err = newHashWriter(p, &StatInfo{stat}, h); err != nil {
+				return err
+			}
 			h = hw
 		}
 		if err := dw.asyncDataFunc(dw.ctx, p, h); err != nil {
@@ -224,15 +232,19 @@ type hashedWriter struct {
 	sum string
 }
 
-func newHashWriter(fi os.FileInfo, w io.WriteCloser) *hashedWriter {
-	h, _ := NewTarsumHash(fi)
+func newHashWriter(p string, fi os.FileInfo, w io.WriteCloser) (*hashedWriter, error) {
+	h, err := NewTarsumHash(p, fi)
+	if err != nil {
+		logrus.Error(err)
+		return nil, err
+	}
 	hw := &hashedWriter{
 		FileInfo: fi,
 		Writer:   io.MultiWriter(w, h),
 		h:        h,
 		w:        w,
 	}
-	return hw
+	return hw, nil
 }
 
 func (hw *hashedWriter) Close() error {
