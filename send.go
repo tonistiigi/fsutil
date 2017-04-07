@@ -1,11 +1,10 @@
-// +build linux
-
 package fsutil
 
 import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -113,6 +112,11 @@ func (s *sender) send() error {
 		stat, ok := fi.Sys().(*Stat)
 		if !ok {
 			return errors.Wrapf(err, "invalid fileinfo without stat info: %s", path)
+		}
+		if runtime.GOOS == "windows" {
+			stat.Mode &= 0755
+			// Add the x bit: make everything +x from windows
+			stat.Mode |= 0111
 		}
 		p := &Packet{
 			Type: PACKET_STAT,
