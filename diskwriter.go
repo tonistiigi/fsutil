@@ -1,5 +1,3 @@
-// +build linux
-
 package fsutil
 
 import (
@@ -10,13 +8,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
-	"github.com/stevvooe/continuity/sysx"
 	"golang.org/x/net/context"
-	"golang.org/x/sys/unix"
 )
 
 type writeToFunc func(context.Context, string, io.WriteCloser) error
@@ -138,7 +134,9 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		if dw.syncDataFunc != nil {
 			var h io.WriteCloser = file
 			if dw.notifyHashed != nil {
-				hw = newHashWriter(fi, file)
+				if hw, err = newHashWriter(p, fi, file); err != nil {
+					return err
+				}
 				h = hw
 			}
 			if err := dw.syncDataFunc(dw.ctx, p, h); err != nil {
@@ -167,7 +165,9 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		dw.requestAsyncFileData(p, destPath, stat)
 	} else if dw.notifyHashed != nil {
 		if hw == nil {
-			hw = newHashWriter(fi, nil)
+			if hw, err = newHashWriter(p, fi, nil); err != nil {
+				return err
+			}
 			hw.Close()
 		}
 		if err := dw.notifyHashed(kind, p, hw, nil); err != nil {
@@ -197,7 +197,10 @@ func (dw *DiskWriter) requestAsyncFileData(p, dest string, stat *Stat) {
 			dest: dest,
 		}
 		if dw.notifyHashed != nil {
-			hw = newHashWriter(&StatInfo{stat}, h)
+			var err error
+			if hw, err = newHashWriter(p, &StatInfo{stat}, h); err != nil {
+				return err
+			}
 			h = hw
 		}
 		if err := dw.asyncDataFunc(dw.ctx, p, h); err != nil {
@@ -224,15 +227,19 @@ type hashedWriter struct {
 	sum string
 }
 
-func newHashWriter(fi os.FileInfo, w io.WriteCloser) *hashedWriter {
-	h, _ := NewTarsumHash(fi)
+func newHashWriter(p string, fi os.FileInfo, w io.WriteCloser) (*hashedWriter, error) {
+	h, err := NewTarsumHash(p, fi)
+	if err != nil {
+		logrus.Error(err)
+		return nil, err
+	}
 	hw := &hashedWriter{
 		FileInfo: fi,
 		Writer:   io.MultiWriter(w, h),
 		h:        h,
 		w:        w,
 	}
-	return hw
+	return hw, nil
 }
 
 func (hw *hashedWriter) Close() error {
@@ -277,58 +284,6 @@ func (lfw *lazyFileWriter) Write(dt []byte) (int, error) {
 func (lfw *lazyFileWriter) Close() error {
 	if lfw.f != nil {
 		return lfw.f.Close()
-	}
-	return nil
-}
-
-func rewriteMetadata(p string, stat *Stat) error {
-	for key, value := range stat.Xattrs {
-		sysx.Setxattr(p, key, value, 0)
-	}
-
-	if err := os.Lchown(p, int(stat.Uid), int(stat.Gid)); err != nil {
-		return errors.Wrapf(err, "failed to lchown %s", p)
-	}
-
-	if os.FileMode(stat.Mode)&os.ModeSymlink == 0 {
-		if err := os.Chmod(p, os.FileMode(stat.Mode)); err != nil {
-			return errors.Wrapf(err, "failed to chown %s", p)
-		}
-	}
-
-	if err := chtimes(p, stat.ModTime); err != nil {
-		return errors.Wrapf(err, "failed to chtimes %s", p)
-	}
-
-	return nil
-}
-
-func chtimes(path string, un int64) error {
-	var utimes [2]unix.Timespec
-	utimes[0] = unix.NsecToTimespec(un)
-	utimes[1] = utimes[0]
-
-	if err := unix.UtimesNanoAt(unix.AT_FDCWD, path, utimes[0:], unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return errors.Wrap(err, "failed call to UtimesNanoAt")
-	}
-
-	return nil
-}
-
-// handleTarTypeBlockCharFifo is an OS-specific helper function used by
-// createTarFile to handle the following types of header: Block; Char; Fifo
-func handleTarTypeBlockCharFifo(path string, stat *Stat) error {
-	mode := uint32(stat.Mode & 07777)
-	if os.FileMode(stat.Mode)&os.ModeCharDevice != 0 {
-		mode |= syscall.S_IFCHR
-	} else if os.FileMode(stat.Mode)&os.ModeNamedPipe != 0 {
-		mode |= syscall.S_IFIFO
-	} else {
-		mode |= syscall.S_IFBLK
-	}
-
-	if err := syscall.Mknod(path, mode, int(mkdev(stat.Devmajor, stat.Devminor))); err != nil {
-		return err
 	}
 	return nil
 }
