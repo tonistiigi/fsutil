@@ -114,9 +114,12 @@ func (s *sender) send() error {
 			return errors.Wrapf(err, "invalid fileinfo without stat info: %s", path)
 		}
 		if runtime.GOOS == "windows" {
-			stat.Mode &= 0755
+			permPart := stat.Mode & uint32(os.ModePerm)
+			noPermPart := stat.Mode &^ uint32(os.ModePerm)
 			// Add the x bit: make everything +x from windows
-			stat.Mode |= 0111
+			permPart |= 0111
+			permPart &= 0755
+			stat.Mode = noPermPart | permPart
 		}
 		p := &Packet{
 			Type: PACKET_STAT,
