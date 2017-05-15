@@ -4,14 +4,19 @@ package fsutil
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/docker/docker/pkg/symlink"
+	iradix "github.com/hashicorp/go-immutable-radix"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
 )
@@ -174,4 +179,101 @@ func newWriteToFunc(baseDir string, delay time.Duration) writeToFunc {
 		}
 		return nil
 	}
+}
+
+// TODO: remove his after moby has merged CacheableSource
+type Tarsum struct {
+	mu   sync.Mutex
+	root string
+	tree *iradix.Tree
+	txn  *iradix.Txn
+}
+
+func NewTarsum(root string) *Tarsum {
+	ts := &Tarsum{
+		tree: iradix.New(),
+		root: root,
+	}
+	return ts
+}
+
+type hashed interface {
+	Hash() string
+}
+
+func (ts *Tarsum) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) (retErr error) {
+	ts.mu.Lock()
+	if ts.txn == nil {
+		ts.txn = ts.tree.Txn()
+	}
+	if kind == ChangeKindDelete {
+		ts.txn.Delete([]byte(p))
+		ts.mu.Unlock()
+		return
+	}
+
+	h, ok := fi.(hashed)
+	if !ok {
+		ts.mu.Unlock()
+		return errors.Errorf("invalid fileinfo: %p", p)
+	}
+
+	hfi := &fileInfo{
+		sum: h.Hash(),
+	}
+	ts.txn.Insert([]byte(p), hfi)
+	ts.mu.Unlock()
+	return nil
+}
+
+func (ts *Tarsum) getRoot() *iradix.Node {
+	ts.mu.Lock()
+	if ts.txn != nil {
+		ts.tree = ts.txn.Commit()
+		ts.txn = nil
+	}
+	t := ts.tree
+	ts.mu.Unlock()
+	return t.Root()
+}
+
+func (ts *Tarsum) Close() error {
+	return nil
+}
+
+func (ts *Tarsum) normalize(path string) (cleanpath, fullpath string, err error) {
+	cleanpath = filepath.Clean(string(os.PathSeparator) + path)[1:]
+	fullpath, err = symlink.FollowSymlinkInScope(filepath.Join(ts.root, path), ts.root)
+	if err != nil {
+		return "", "", fmt.Errorf("Forbidden path outside the context: %s (%s)", path, fullpath)
+	}
+	_, err = os.Lstat(fullpath)
+	if err != nil {
+		return "", "", err
+	}
+	return
+}
+
+func (c *Tarsum) Hash(path string) (string, error) {
+	n := c.getRoot()
+	sum := ""
+	v, ok := n.Get([]byte(path))
+	if !ok {
+		sum = path
+	} else {
+		sum = v.(*fileInfo).sum
+	}
+	return sum, nil
+}
+
+func (c *Tarsum) Root() string {
+	return c.root
+}
+
+type fileInfo struct {
+	sum string
+}
+
+func (fi *fileInfo) Hash() string {
+	return fi.sum
 }

@@ -17,7 +17,7 @@ func main() {
 
 	s := util.NewProtoStream(os.Stdin, os.Stdout)
 
-	if err := fsutil.Receive(context.Background(), s, flag.Args()[0]); err != nil {
+	if err := fsutil.Receive(context.Background(), s, flag.Args()[0], nil); err != nil {
 		panic(err)
 	}
 }

@@ -1,6 +1,8 @@
 package fsutil
 
 import (
+	"archive/tar"
+	"crypto/sha256"
 	"encoding/hex"
 	"hash"
 	"io"
@@ -11,6 +13,8 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/docker/docker/pkg/archive"
+	"github.com/docker/docker/pkg/tarsum"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 )
@@ -313,4 +317,45 @@ func nextSuffix() string {
 	rand = r
 	randmu.Unlock()
 	return strconv.Itoa(int(1e9 + r%1e9))[1:]
+}
+
+func NewTarsumHash(p string, fi os.FileInfo) (hash.Hash, error) {
+	stat, ok := fi.Sys().(*Stat)
+	link := ""
+	if ok {
+		link = stat.Linkname
+	}
+	if fi.IsDir() {
+		p += string(os.PathSeparator)
+	}
+	h, err := archive.FileInfoHeader(p, fi, link)
+	if err != nil {
+		return nil, err
+	}
+	h.Name = p
+	if ok {
+		h.Uid = int(stat.Uid)
+		h.Gid = int(stat.Gid)
+		h.Linkname = stat.Linkname
+		if stat.Xattrs != nil {
+			h.Xattrs = make(map[string]string)
+			for k, v := range stat.Xattrs {
+				h.Xattrs[k] = string(v)
+			}
+		}
+	}
+	tsh := &tarsumHash{h: h, Hash: sha256.New()}
+	tsh.Reset()
+	return tsh, nil
+}
+
+// Reset resets the Hash to its initial state.
+func (tsh *tarsumHash) Reset() {
+	tsh.Hash.Reset()
+	tarsum.WriteV1Header(tsh.h, tsh.Hash)
+}
+
+type tarsumHash struct {
+	hash.Hash
+	h *tar.Header
 }
