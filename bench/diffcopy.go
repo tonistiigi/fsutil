@@ -21,11 +21,11 @@ func diffCopy(proto bool, src, dest string) error {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		err1 = fsutil.Send(context.Background(), s1, src, nil)
+		err1 = fsutil.Send(context.Background(), s1, src, nil, nil)
 		wg.Done()
 	}()
 	go func() {
-		err2 = fsutil.Receive(context.Background(), s2, dest)
+		err2 = fsutil.Receive(context.Background(), s2, dest, nil)
 		wg.Done()
 	}()
 
