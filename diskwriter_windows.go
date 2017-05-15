@@ -1,3 +1,5 @@
+// +build windows
+
 package fsutil
 
 import (
@@ -12,7 +14,6 @@ func rewriteMetadata(p string, stat *Stat) error {
 }
 
 func chtimes(path string, un int64) error {
-
 	mtime := time.Unix(0, un)
 	return os.Chtimes(path, mtime, mtime)
 }
