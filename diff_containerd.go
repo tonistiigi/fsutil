@@ -1,8 +1,6 @@
 package fsutil
 
 import (
-	"bytes"
-	"io"
 	"os"
 	"strings"
 
@@ -10,7 +8,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Everything below is copied from containerd/fs. TODO: remove duplication
+// Everything below is copied from containerd/fs. TODO: remove duplication @dmcgowan
 
 // Const redefined because containerd/fs doesn't build on !linux
 
@@ -21,7 +19,7 @@ type ChangeKind int
 const (
 	// ChangeKindAdd represents an addition of
 	// a file
-	ChangeKindAdd = iota
+	ChangeKindAdd ChangeKind = iota
 
 	// ChangeKindModify represents a change to
 	// an existing file
@@ -159,84 +157,37 @@ func pathChange(lower, upper *currentPath) (ChangeKind, string) {
 	}
 }
 
-func sameFile(f1, f2 *currentPath) (bool, error) {
-	// if os.SameFile(f1.f, f2.f) {
-	//   return true, nil
-	// }
-
-	// todo: add these to os.FileInfo
-	// equalStat, err := compareSysStat(f1.f.Sys(), f2.f.Sys())
-	// if err != nil || !equalStat {
-	//   return equalStat, err
-	// }
-	//
-	// if eq, err := compareCapabilities(f1.fullPath, f2.fullPath); err != nil || !eq {
-	//   return eq, err
-	// }
-
+func sameFile(f1, f2 *currentPath) (same bool, retErr error) {
 	// If not a directory also check size, modtime, and content
 	if !f1.f.IsDir() {
 		if f1.f.Size() != f2.f.Size() {
 			return false, nil
 		}
+
 		t1 := f1.f.ModTime()
 		t2 := f2.f.ModTime()
-
 		if t1.UnixNano() != t2.UnixNano() {
 			return false, nil
 		}
-
-		// // If the timestamp may have been truncated in one of the
-		// // files, check content of file to determine difference
-		// if t1.Nanosecond() == 0 || t2.Nanosecond() == 0 {
-		//   if f1.f.Size() > 0 {
-		//     eq, err := compareFileContent(f1.fullPath, f2.fullPath)
-		//     if err != nil || !eq {
-		//       return eq, err
-		//     }
-		//   }
-		// } else
-		// if t1.Nanosecond() != t2.Nanosecond() {
-		//       return false, nil
-		//     }
 	}
-	return true, nil
+
+	ls1, ok := f1.f.Sys().(*Stat)
+	if !ok {
+		return false, nil
+	}
+	ls2, ok := f1.f.Sys().(*Stat)
+	if !ok {
+		return false, nil
+	}
+
+	return compareStat(ls1, ls2)
 }
 
-const compareChuckSize = 32 * 1024
-
-// compareFileContent compares the content of 2 same sized files
-// by comparing each byte.
-func compareFileContent(p1, p2 string) (bool, error) {
-	f1, err := os.Open(p1)
-	if err != nil {
-		return false, err
-	}
-	defer f1.Close()
-	f2, err := os.Open(p2)
-	if err != nil {
-		return false, err
-	}
-	defer f2.Close()
-
-	b1 := make([]byte, compareChuckSize) // todo: pool
-	b2 := make([]byte, compareChuckSize)
-	for {
-		n1, err1 := f1.Read(b1)
-		if err1 != nil && err1 != io.EOF {
-			return false, err1
-		}
-		n2, err2 := f2.Read(b2)
-		if err2 != nil && err2 != io.EOF {
-			return false, err2
-		}
-		if n1 != n2 || !bytes.Equal(b1[:n1], b2[:n2]) {
-			return false, nil
-		}
-		if err1 == io.EOF && err2 == io.EOF {
-			return true, nil
-		}
-	}
+// compareStat returns whether the stats are equivalent,
+// whether the files are considered the same file, and
+// an error
+func compareStat(ls1, ls2 *Stat) (bool, error) {
+	return ls1.Mode == ls2.Mode && ls1.Uid == ls2.Uid && ls1.Gid == ls2.Gid && ls1.Devmajor == ls2.Devmajor && ls1.Devminor == ls2.Devminor && ls1.Linkname == ls2.Linkname, nil
 }
 
 func nextPath(ctx context.Context, pathC <-chan *currentPath) (*currentPath, error) {

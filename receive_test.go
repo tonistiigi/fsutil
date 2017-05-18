@@ -35,6 +35,7 @@ func TestCopySimple(t *testing.T) {
 	s1, s2 := sockPairProto()
 
 	ts := NewTarsum("")
+	chs := &changes{fn: ts.HandleChange}
 
 	var err1 error
 	var err2 error
@@ -45,7 +46,7 @@ func TestCopySimple(t *testing.T) {
 		wg.Done()
 	}()
 	go func() {
-		err2 = Receive(context.Background(), s2, dest, ts.HandleChange)
+		err2 = Receive(context.Background(), s2, dest, chs.HandleChange)
 		wg.Done()
 	}()
 
@@ -86,10 +87,9 @@ symlink:../../ zzz/bb/cc/dd
 	assert.NoError(t, err)
 	assert.Equal(t, h, "320a4733517590b42d628d51ac2ec8f305fc985ec36ac9bcb7d4e7376441c851")
 
-	// c := &counter{}
-	// err = ts.Walk("zzz/bb", c.inc)
-	// assert.NoError(t, err)
-	// assert.Equal(t, c.c, 3)
+	k, ok := chs.c["zzz/aa"]
+	assert.Equal(t, ok, true)
+	assert.Equal(t, k, ChangeKindAdd)
 
 	err = ioutil.WriteFile(filepath.Join(d, "zzz/bb/cc/foo"), []byte("data5"), 0600)
 	assert.NoError(t, err)
@@ -97,13 +97,15 @@ symlink:../../ zzz/bb/cc/dd
 	err = os.RemoveAll(filepath.Join(d, "foo2"))
 	assert.NoError(t, err)
 
+	chs = &changes{fn: ts.HandleChange}
+
 	wg.Add(2)
 	go func() {
 		err1 = Send(context.Background(), s1, d, nil, nil)
 		wg.Done()
 	}()
 	go func() {
-		err2 = Receive(context.Background(), s2, dest, ts.HandleChange)
+		err2 = Receive(context.Background(), s2, dest, chs.HandleChange)
 		wg.Done()
 	}()
 
@@ -140,15 +142,16 @@ file zzz/bb/cc/foo
 	assert.NoError(t, err)
 	assert.Equal(t, h, "foo2")
 
-	// c = &counter{}
-	// err = ts.Walk("zzz/bb", c.inc)
-	// assert.NoError(t, err)
-	// assert.Equal(t, c.c, 4)
-	//
-	// c = &counter{}
-	// err = ts.Walk("zzz/bb/cc/dd", c.inc)
-	// assert.NoError(t, err)
-	// assert.Equal(t, c.c, 1)
+	k, ok = chs.c["foo2"]
+	assert.Equal(t, ok, true)
+	assert.Equal(t, k, ChangeKindDelete)
+
+	k, ok = chs.c["zzz/bb/cc/foo"]
+	assert.Equal(t, ok, true)
+	assert.Equal(t, k, ChangeKindAdd)
+
+	_, ok = chs.c["zzz/aa"]
+	assert.Equal(t, ok, false)
 }
 
 func sockPair() (Stream, Stream) {
@@ -216,11 +219,15 @@ func (fc *fakeConnProto) SendMsg(m interface{}) error {
 	return nil
 }
 
-// type counter struct {
-// 	c int
-// }
-//
-// func (c *counter) inc(p string, fi builder.FileInfo, err error) error {
-// 	c.c++
-// 	return err
-// }
+type changes struct {
+	c  map[string]ChangeKind
+	fn ChangeFunc
+}
+
+func (c *changes) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) error {
+	if c.c == nil {
+		c.c = make(map[string]ChangeKind)
+	}
+	c.c[p] = kind
+	return c.fn(kind, p, fi, err)
+}
