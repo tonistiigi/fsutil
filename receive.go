@@ -28,14 +28,16 @@ func Receive(ctx context.Context, conn Stream, dest string, notifyHashed ChangeF
 }
 
 type receiver struct {
-	dest         string
-	conn         Stream
-	files        map[string]uint32
-	pipes        map[uint32]*io.PipeWriter
-	mu           sync.RWMutex
-	muPipes      sync.RWMutex
-	walkChan     chan *currentPath
-	notifyHashed ChangeFunc
+	dest           string
+	conn           Stream
+	files          map[string]uint32
+	pipes          map[uint32]*io.PipeWriter
+	mu             sync.RWMutex
+	muPipes        sync.RWMutex
+	walkChan       chan *currentPath
+	notifyHashed   ChangeFunc
+	orderValidator Validator
+	hlValidator    Hardlinks
 }
 
 func (r *receiver) readStat(ctx context.Context, pathC chan<- *currentPath) error {
@@ -96,7 +98,14 @@ func (r *receiver) run(ctx context.Context) error {
 					r.mu.Unlock()
 				}
 				i++
-				r.walkChan <- &currentPath{path: p.Stat.Path, f: &StatInfo{p.Stat}}
+				cp := &currentPath{path: p.Stat.Path, f: &StatInfo{p.Stat}}
+				if err := r.orderValidator.HandleChange(ChangeKindAdd, cp.path, cp.f, nil); err != nil {
+					return err
+				}
+				if err := r.hlValidator.HandleChange(ChangeKindAdd, cp.path, cp.f, nil); err != nil {
+					return err
+				}
+				r.walkChan <- cp
 			case PACKET_DATA:
 				r.muPipes.Lock()
 				pw, ok := r.pipes[p.ID]

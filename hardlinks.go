@@ -6,7 +6,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Hardlinks validates that all targets for links were
+// Hardlinks validates that all targets for links were part of the changes
 
 type Hardlinks struct {
 	seenFiles map[string]struct{}
