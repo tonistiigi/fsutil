@@ -3,6 +3,7 @@ package fsutil
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -120,6 +121,15 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 		if err := loadXattr(origpath, stat); err != nil {
 			return errors.Wrapf(err, "failed to xattr %s", path)
+		}
+
+		if runtime.GOOS == "windows" {
+			permPart := stat.Mode & uint32(os.ModePerm)
+			noPermPart := stat.Mode &^ uint32(os.ModePerm)
+			// Add the x bit: make everything +x from windows
+			permPart |= 0111
+			permPart &= 0755
+			stat.Mode = noPermPart | permPart
 		}
 
 		select {
