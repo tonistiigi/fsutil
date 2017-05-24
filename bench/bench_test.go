@@ -239,12 +239,12 @@ func BenchmarkIncrementalDiffCopy1000(b *testing.B) {
 	benchmarkIncrementalCopy(b, diffCopyReg, 1000)
 }
 
-// func BenchmarkIncrementalDiffCopy5000(b *testing.B) {
-//   benchmarkIncrementalCopy(b, copyWithTar, 5000)
-// }
-// func BenchmarkIncrementalDiffCopy10000(b *testing.B) {
-//   benchmarkIncrementalCopy(b, copyWithTar, 10000)
-// }
+func BenchmarkIncrementalDiffCopy5000(b *testing.B) {
+	benchmarkIncrementalCopy(b, diffCopyReg, 5000)
+}
+func BenchmarkIncrementalDiffCopy10000(b *testing.B) {
+	benchmarkIncrementalCopy(b, diffCopyReg, 10000)
+}
 
 func BenchmarkIncrementalCopyWithTar10(b *testing.B) {
 	benchmarkIncrementalCopy(b, copyWithTar, 10)
@@ -272,12 +272,12 @@ func BenchmarkIncrementalRsync1000(b *testing.B) {
 	benchmarkIncrementalCopy(b, rsync, 1000)
 }
 
-// func BenchmarkIncrementalRsync5000(b *testing.B) {
-//   benchmarkIncrementalCopy(b, rsync, 5000)
-// }
-// func BenchmarkIncrementalRsync10000(b *testing.B) {
-//   benchmarkIncrementalCopy(b, rsync, 10000)
-// }
+func BenchmarkIncrementalRsync5000(b *testing.B) {
+	benchmarkIncrementalCopy(b, rsync, 5000)
+}
+func BenchmarkIncrementalRsync10000(b *testing.B) {
+	benchmarkIncrementalCopy(b, rsync, 10000)
+}
 
 func BenchmarkRsync10(b *testing.B) {
 	benchmarkInitialCopy(b, rsync, 10)
