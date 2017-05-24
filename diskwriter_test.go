@@ -34,10 +34,10 @@ func TestWriterSimple(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(dest)
 
-	dw := &DiskWriter{
-		dest:         dest,
-		syncDataFunc: noOpWriteTo,
-	}
+	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
+		SyncDataCb: noOpWriteTo,
+	})
+	assert.NoError(t, err)
 
 	for _, c := range changes {
 		err := dw.HandleChange(c.kind, c.path, c.fi, nil)
@@ -72,10 +72,10 @@ func TestWalkerWriterSimple(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(dest)
 
-	dw := &DiskWriter{
-		dest:         dest,
-		syncDataFunc: newWriteToFunc(d, 0),
-	}
+	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
+		SyncDataCb: newWriteToFunc(d, 0),
+	})
+	assert.NoError(t, err)
 
 	err = Walk(context.Background(), d, nil, readAsAdd(dw.HandleChange))
 	assert.NoError(t, err)
@@ -113,17 +113,17 @@ func TestWalkerWriterAsync(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(dest)
 
-	dw := &DiskWriter{
-		dest:          dest,
-		asyncDataFunc: newWriteToFunc(d, 300*time.Millisecond),
-	}
+	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
+		AsyncDataCb: newWriteToFunc(d, 300*time.Millisecond),
+	})
+	assert.NoError(t, err)
 
 	st := time.Now()
 
 	err = Walk(context.Background(), d, nil, readAsAdd(dw.HandleChange))
 	assert.NoError(t, err)
 
-	err = dw.Wait()
+	err = dw.Wait(context.TODO())
 	assert.NoError(t, err)
 
 	dt, err := ioutil.ReadFile(filepath.Join(dest, "foo/foo3"))
@@ -162,7 +162,7 @@ func noOpWriteTo(context.Context, string, io.WriteCloser) error {
 	return nil
 }
 
-func newWriteToFunc(baseDir string, delay time.Duration) writeToFunc {
+func newWriteToFunc(baseDir string, delay time.Duration) WriteToFunc {
 	return func(ctx context.Context, path string, wc io.WriteCloser) error {
 		if delay > 0 {
 			time.Sleep(delay)

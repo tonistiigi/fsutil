@@ -20,30 +20,52 @@ func Receive(ctx context.Context, conn Stream, dest string, notifyHashed ChangeF
 		conn:         &syncStream{Stream: conn},
 		dest:         dest,
 		files:        make(map[string]uint32),
-		pipes:        make(map[uint32]*io.PipeWriter),
-		walkChan:     make(chan *currentPath, 128),
+		pipes:        make(map[uint32]io.WriteCloser),
 		notifyHashed: notifyHashed,
 	}
 	return r.run(ctx)
 }
 
 type receiver struct {
-	dest           string
-	conn           Stream
-	files          map[string]uint32
-	pipes          map[uint32]*io.PipeWriter
-	mu             sync.RWMutex
-	muPipes        sync.RWMutex
-	walkChan       chan *currentPath
+	dest    string
+	conn    Stream
+	files   map[string]uint32
+	pipes   map[uint32]io.WriteCloser
+	mu      sync.RWMutex
+	muPipes sync.RWMutex
+
 	notifyHashed   ChangeFunc
 	orderValidator Validator
 	hlValidator    Hardlinks
 }
 
-func (r *receiver) readStat(ctx context.Context, pathC chan<- *currentPath) error {
+type dynamicWalker struct {
+	walkChan chan *currentPath
+	closed   bool
+}
+
+func newDynamicWalker() *dynamicWalker {
+	return &dynamicWalker{
+		walkChan: make(chan *currentPath, 128),
+	}
+}
+
+func (w *dynamicWalker) update(p *currentPath) error {
+	if w.closed {
+		return errors.New("walker is closed")
+	}
+	if p == nil {
+		close(w.walkChan)
+		return nil
+	}
+	w.walkChan <- p
+	return nil
+}
+
+func (w *dynamicWalker) fill(ctx context.Context, pathC chan<- *currentPath) error {
 	for {
 		select {
-		case p, ok := <-r.walkChan:
+		case p, ok := <-w.walkChan:
 			if !ok {
 				return nil
 			}
@@ -58,18 +80,26 @@ func (r *receiver) readStat(ctx context.Context, pathC chan<- *currentPath) erro
 func (r *receiver) run(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
-	dw := DiskWriter{
-		asyncDataFunc: r.asyncDataFunc,
-		dest:          r.dest,
-		notifyHashed:  r.notifyHashed,
+	dw, err := NewDiskWriter(ctx, r.dest, DiskWriterOpt{
+		AsyncDataCb: r.asyncDataFunc,
+		NotifyCb:    r.notifyHashed,
+	})
+	if err != nil {
+		return err
 	}
 
-	walkDone := make(chan struct{})
+	w := newDynamicWalker()
 
 	g.Go(func() error {
-		err := doubleWalkDiff(ctx, dw.HandleChange, GetWalkerFn(r.dest), r.readStat)
-		close(walkDone)
-		return err
+		err := doubleWalkDiff(ctx, dw.HandleChange, GetWalkerFn(r.dest), w.fill)
+		if err != nil {
+			return err
+		}
+		if err := dw.Wait(ctx); err != nil {
+			return err
+		}
+		r.conn.SendMsg(&Packet{Type: PACKET_FIN})
+		return nil
 	})
 
 	g.Go(func() error {
@@ -84,15 +114,12 @@ func (r *receiver) run(ctx context.Context) error {
 			switch p.Type {
 			case PACKET_STAT:
 				if p.Stat == nil {
-					close(r.walkChan)
-					<-walkDone
-					go func() {
-						dw.Wait()
-						r.conn.SendMsg(&Packet{Type: PACKET_FIN})
-					}()
+					if err := w.update(nil); err != nil {
+						return err
+					}
 					break
 				}
-				if os.FileMode(p.Stat.Mode)&(os.ModeDir|os.ModeSymlink|os.ModeNamedPipe|os.ModeDevice) == 0 {
+				if fileCanRequestData(os.FileMode(p.Stat.Mode)) {
 					r.mu.Lock()
 					r.files[p.Stat.Path] = i
 					r.mu.Unlock()
@@ -105,15 +132,16 @@ func (r *receiver) run(ctx context.Context) error {
 				if err := r.hlValidator.HandleChange(ChangeKindAdd, cp.path, cp.f, nil); err != nil {
 					return err
 				}
-				r.walkChan <- cp
+				if err := w.update(cp); err != nil {
+					return err
+				}
 			case PACKET_DATA:
 				r.muPipes.Lock()
 				pw, ok := r.pipes[p.ID]
+				r.muPipes.Unlock()
 				if !ok {
-					r.muPipes.Unlock()
 					return errors.Errorf("invalid file request %s", p.ID)
 				}
-				r.muPipes.Unlock()
 				if len(p.Data) == 0 {
 					if err := pw.Close(); err != nil {
 						return err
@@ -141,18 +169,42 @@ func (r *receiver) asyncDataFunc(ctx context.Context, p string, wc io.WriteClose
 	delete(r.files, p)
 	r.mu.Unlock()
 
-	pr, pw := io.Pipe()
+	wwc := newWrappedWriteCloser(wc)
 	r.muPipes.Lock()
-	r.pipes[id] = pw
+	r.pipes[id] = wwc
 	r.muPipes.Unlock()
 	if err := r.conn.SendMsg(&Packet{Type: PACKET_REQ, ID: id}); err != nil {
 		return err
 	}
+	err := wwc.Wait(ctx)
+	r.muPipes.Lock()
+	delete(r.pipes, id)
+	r.muPipes.Unlock()
+	return err
+}
 
-	buf := bufPool.Get().([]byte)
-	defer bufPool.Put(buf)
-	if _, err := io.CopyBuffer(wc, pr, buf); err != nil {
-		return err
+type wrappedWriteCloser struct {
+	io.WriteCloser
+	err  error
+	once sync.Once
+	done chan struct{}
+}
+
+func newWrappedWriteCloser(wc io.WriteCloser) *wrappedWriteCloser {
+	return &wrappedWriteCloser{WriteCloser: wc, done: make(chan struct{})}
+}
+
+func (w *wrappedWriteCloser) Close() error {
+	w.err = w.WriteCloser.Close()
+	w.once.Do(func() { close(w.done) })
+	return w.err
+}
+
+func (w *wrappedWriteCloser) Wait(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.done:
+		return w.err
 	}
-	return wc.Close()
 }

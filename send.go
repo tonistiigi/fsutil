@@ -125,10 +125,12 @@ func (s *sender) send() error {
 			Type: PACKET_STAT,
 			Stat: stat,
 		}
-		s.mu.Lock()
-		s.files[i] = stat.Path
+		if fileCanRequestData(os.FileMode(stat.Mode)) {
+			s.mu.Lock()
+			s.files[i] = stat.Path
+			s.mu.Unlock()
+		}
 		i++
-		s.mu.Unlock()
 		s.updateProgress(p.Size(), false)
 		return errors.Wrapf(s.conn.SendMsg(p), "failed to send stat %s", path)
 	})
@@ -136,6 +138,12 @@ func (s *sender) send() error {
 		return err
 	}
 	return errors.Wrapf(s.conn.SendMsg(&Packet{Type: PACKET_STAT}), "failed to send last stat")
+}
+
+func fileCanRequestData(m os.FileMode) bool {
+	// avoid updating this function as it needs to match between sender/receiver.
+	// version if needed
+	return m&os.ModeType == 0
 }
 
 type fileSender struct {

@@ -14,33 +14,53 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/tarsum"
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
+	"golang.org/x/sync/errgroup"
 )
 
-type writeToFunc func(context.Context, string, io.WriteCloser) error
+type WriteToFunc func(context.Context, string, io.WriteCloser) error
 
-type DiskWriter struct {
-	asyncDataFunc writeToFunc
-	syncDataFunc  writeToFunc
-	dest          string
-
-	wg           sync.WaitGroup
-	mu           sync.RWMutex
-	err          error
-	ctx          context.Context
-	cancel       func()
-	notifyHashed func(ChangeKind, string, os.FileInfo, error) error
+type DiskWriterOpt struct {
+	AsyncDataCb WriteToFunc
+	SyncDataCb  WriteToFunc
+	NotifyCb    func(ChangeKind, string, os.FileInfo, error) error
 }
 
-func (dw *DiskWriter) Wait() error {
-	dw.wg.Wait()
-	dw.mu.RLock()
-	defer dw.mu.RUnlock()
-	return dw.err
+type DiskWriter struct {
+	opt  DiskWriterOpt
+	dest string
+
+	wg     sync.WaitGroup
+	ctx    context.Context
+	cancel func()
+	eg     *errgroup.Group
+}
+
+func NewDiskWriter(ctx context.Context, dest string, opt DiskWriterOpt) (*DiskWriter, error) {
+	if opt.SyncDataCb == nil && opt.AsyncDataCb == nil {
+		return nil, errors.New("no data callback specified")
+	}
+	if opt.SyncDataCb != nil && opt.AsyncDataCb != nil {
+		return nil, errors.New("can't specify both sync and async data callbacks")
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	eg, ctx := errgroup.WithContext(ctx)
+
+	return &DiskWriter{
+		opt:    opt,
+		dest:   dest,
+		eg:     eg,
+		ctx:    ctx,
+		cancel: cancel,
+	}, nil
+}
+
+func (dw *DiskWriter) Wait(ctx context.Context) error {
+	return dw.eg.Wait()
 }
 
 func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) (retErr error) {
@@ -48,19 +68,14 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		return err
 	}
 
-	if dw.ctx == nil {
-		ctx, cancel := context.WithCancel(context.Background())
-		dw.ctx = ctx
-		dw.cancel = cancel
+	select {
+	case <-dw.ctx.Done():
+		return dw.ctx.Err()
+	default:
 	}
 
 	defer func() {
 		if retErr != nil {
-			dw.mu.Lock()
-			if dw.err == nil {
-				dw.err = err
-			}
-			dw.mu.Unlock()
 			dw.cancel()
 		}
 	}()
@@ -72,8 +87,8 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		if err := os.RemoveAll(destPath); err != nil {
 			return errors.Wrapf(err, "failed to remove: %s", destPath)
 		}
-		if dw.notifyHashed != nil {
-			if err := dw.notifyHashed(kind, p, nil, nil); err != nil {
+		if dw.opt.NotifyCb != nil {
+			if err := dw.opt.NotifyCb(kind, p, nil, nil); err != nil {
 				return err
 			}
 		}
@@ -110,10 +125,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		newPath = filepath.Join(filepath.Dir(destPath), ".tmp."+nextSuffix())
 	}
 
-	// todo: combine with hardlink validation
-
-	asyncRequestFileData := false
-	var hw *hashedWriter
+	isRegularFile := false
 
 	switch {
 	case fi.IsDir():
@@ -133,24 +145,17 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 			return errors.Wrapf(err, "failed to link %s to %s", newPath, stat.Linkname)
 		}
 	default:
+		isRegularFile = true
 		file, err := os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY, fi.Mode()) //todo: windows
 		if err != nil {
 			return errors.Wrapf(err, "failed to create %s", newPath)
 		}
-		if dw.syncDataFunc != nil {
-			var h io.WriteCloser = file
-			if dw.notifyHashed != nil {
-				if hw, err = newHashWriter(p, fi, file); err != nil {
-					return err
-				}
-				h = hw
-			}
-			if err := dw.syncDataFunc(dw.ctx, p, h); err != nil {
-				return errors.Wrapf(err, "failed to write %s", newPath)
+		if dw.opt.SyncDataCb != nil {
+			if err := dw.processChange(ChangeKindAdd, p, fi, file); err != nil {
+				file.Close()
+				return err
 			}
 			break
-		} else if dw.asyncDataFunc != nil {
-			asyncRequestFileData = true
 		}
 		if err := file.Close(); err != nil {
 			return errors.Wrapf(err, "failed to close %s", newPath)
@@ -167,62 +172,56 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		}
 	}
 
-	if asyncRequestFileData {
-		dw.requestAsyncFileData(p, destPath, stat)
-	} else if dw.notifyHashed != nil {
-		if hw == nil {
-			if hw, err = newHashWriter(p, fi, nil); err != nil {
-				return err
-			}
-			hw.Close()
+	if isRegularFile {
+		if dw.opt.AsyncDataCb != nil {
+			dw.requestAsyncFileData(p, destPath, fi)
 		}
-		if err := dw.notifyHashed(kind, p, hw, nil); err != nil {
-			return err
-		}
+	} else {
+		return dw.processChange(kind, p, fi, nil)
 	}
 
 	return nil
 }
 
-func (dw *DiskWriter) requestAsyncFileData(p, dest string, stat *Stat) {
-	dw.wg.Add(1)
+func (dw *DiskWriter) requestAsyncFileData(p, dest string, fi os.FileInfo) {
 	// todo: limit worker threads
-	go func() (retErr error) {
-		defer func() {
-			if retErr != nil {
-				dw.mu.Lock()
-				if dw.err == nil {
-					dw.err = retErr
-					dw.cancel()
-				}
-				dw.mu.Unlock()
-			}
-		}()
-		var hw *hashedWriter
-		var h io.WriteCloser = &lazyFileWriter{
+	dw.eg.Go(func() error {
+		if err := dw.processChange(ChangeKindAdd, p, fi, &lazyFileWriter{
 			dest: dest,
-		}
-		if dw.notifyHashed != nil {
-			var err error
-			if hw, err = newHashWriter(p, &StatInfo{stat}, h); err != nil {
-				return err
-			}
-			h = hw
-		}
-		if err := dw.asyncDataFunc(dw.ctx, p, h); err != nil {
+		}); err != nil {
 			return err
 		}
+		return chtimes(dest, fi.ModTime().UnixNano()) // TODO: parent dirs
+	})
+}
+
+func (dw *DiskWriter) processChange(kind ChangeKind, p string, fi os.FileInfo, w io.WriteCloser) error {
+	origw := w
+	var hw *hashedWriter
+	if dw.opt.NotifyCb != nil {
+		var err error
+		if hw, err = newHashWriter(p, fi, w); err != nil {
+			return err
+		}
+		w = hw
+	}
+	if origw != nil {
+		fn := dw.opt.SyncDataCb
+		if fn == nil && dw.opt.AsyncDataCb != nil {
+			fn = dw.opt.AsyncDataCb
+		}
+		if err := fn(dw.ctx, p, w); err != nil {
+			return err
+		}
+	} else {
 		if hw != nil {
-			if err := dw.notifyHashed(ChangeKindAdd, p, hw, nil); err != nil {
-				return err
-			}
+			hw.Close()
 		}
-		if err := chtimes(dest, stat.ModTime); err != nil { // TODO: check parent dirs
-			return err
-		}
-		dw.wg.Done()
-		return nil
-	}()
+	}
+	if hw != nil {
+		return dw.opt.NotifyCb(kind, p, hw, nil)
+	}
+	return nil
 }
 
 type hashedWriter struct {
@@ -236,7 +235,6 @@ type hashedWriter struct {
 func newHashWriter(p string, fi os.FileInfo, w io.WriteCloser) (*hashedWriter, error) {
 	h, err := NewTarsumHash(p, fi)
 	if err != nil {
-		logrus.Error(err)
 		return nil, err
 	}
 	hw := &hashedWriter{
@@ -258,16 +256,6 @@ func (hw *hashedWriter) Close() error {
 
 func (hw *hashedWriter) Hash() string {
 	return hw.sum
-}
-
-func (hw *hashedWriter) SetHash(s string) {
-}
-
-// Hashed defines an extra method intended for implementations of os.FileInfo.
-type Hashed interface {
-	// Hash returns the hash of a file.
-	Hash() string
-	SetHash(string)
 }
 
 type lazyFileWriter struct {

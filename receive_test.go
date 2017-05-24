@@ -222,12 +222,15 @@ func (fc *fakeConnProto) SendMsg(m interface{}) error {
 type changes struct {
 	c  map[string]ChangeKind
 	fn ChangeFunc
+	mu sync.Mutex
 }
 
 func (c *changes) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) error {
+	c.mu.Lock()
 	if c.c == nil {
 		c.c = make(map[string]ChangeKind)
 	}
 	c.c[p] = kind
+	c.mu.Unlock()
 	return c.fn(kind, p, fi, err)
 }
