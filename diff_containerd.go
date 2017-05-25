@@ -143,9 +143,8 @@ func pathChange(lower, upper *currentPath) (ChangeKind, string) {
 	if upper == nil {
 		return ChangeKindDelete, lower.path
 	}
-	// TODO: compare by directory
 
-	switch i := strings.Compare(lower.path, upper.path); {
+	switch i := ComparePath(lower.path, upper.path); {
 	case i < 0:
 		// File in lower that is not in upper
 		return ChangeKindDelete, lower.path

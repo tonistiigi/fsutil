@@ -20,6 +20,7 @@ var bufPool = sync.Pool{
 type Stream interface {
 	RecvMsg(interface{}) error
 	SendMsg(m interface{}) error
+	Context() context.Context
 }
 
 func Send(ctx context.Context, conn Stream, root string, opt *WalkOpt, progressCb func(int, bool)) error {
@@ -51,9 +52,6 @@ type sender struct {
 }
 
 func (s *sender) run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	g, ctx := errgroup.WithContext(ctx)
 
 	defer s.updateProgress(0, true)

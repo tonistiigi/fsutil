@@ -101,6 +101,8 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 
 	passedFilter:
+		path = filepath.ToSlash(path)
+
 		stat := &Stat{
 			Path:    path,
 			Mode:    uint32(fi.Mode()),

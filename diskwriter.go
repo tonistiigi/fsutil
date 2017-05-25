@@ -80,6 +80,8 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		}
 	}()
 
+	p = filepath.FromSlash(p)
+
 	destPath := filepath.Join(dw.dest, p)
 
 	if kind == ChangeKindDelete {

@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestCopySimple(t *testing.T) {
@@ -24,6 +25,7 @@ func TestCopySimple(t *testing.T) {
 		"ADD zzz/bb dir",
 		"ADD zzz/bb/cc dir",
 		"ADD zzz/bb/cc/dd symlink ../../",
+		"ADD zzz.aa zzdata",
 	}))
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
@@ -32,27 +34,20 @@ func TestCopySimple(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(dest)
 
-	s1, s2 := sockPairProto()
-
 	ts := NewTarsum("")
 	chs := &changes{fn: ts.HandleChange}
 
-	var err1 error
-	var err2 error
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		err1 = Send(context.Background(), s1, d, nil, nil)
-		wg.Done()
-	}()
-	go func() {
-		err2 = Receive(context.Background(), s2, dest, chs.HandleChange)
-		wg.Done()
-	}()
+	eg, ctx := errgroup.WithContext(context.Background())
+	s1, s2 := sockPairProto(ctx)
 
-	wg.Wait()
-	assert.NoError(t, err1)
-	assert.NoError(t, err2)
+	eg.Go(func() error {
+		return Send(ctx, s1, d, nil, nil)
+	})
+	eg.Go(func() error {
+		return Receive(ctx, s2, dest, chs.HandleChange)
+	})
+
+	assert.NoError(t, eg.Wait())
 
 	b := &bytes.Buffer{}
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
@@ -65,6 +60,7 @@ file zzz/aa
 dir zzz/bb
 dir zzz/bb/cc
 symlink:../../ zzz/bb/cc/dd
+file zzz.aa
 `)
 
 	dt, err := ioutil.ReadFile(filepath.Join(dest, "zzz/aa"))
@@ -99,19 +95,17 @@ symlink:../../ zzz/bb/cc/dd
 
 	chs = &changes{fn: ts.HandleChange}
 
-	wg.Add(2)
-	go func() {
-		err1 = Send(context.Background(), s1, d, nil, nil)
-		wg.Done()
-	}()
-	go func() {
-		err2 = Receive(context.Background(), s2, dest, chs.HandleChange)
-		wg.Done()
-	}()
+	eg, ctx = errgroup.WithContext(context.Background())
+	s1, s2 = sockPairProto(ctx)
 
-	wg.Wait()
-	assert.NoError(t, err1)
-	assert.NoError(t, err2)
+	eg.Go(func() error {
+		return Send(ctx, s1, d, nil, nil)
+	})
+	eg.Go(func() error {
+		return Receive(ctx, s2, dest, chs.HandleChange)
+	})
+
+	assert.NoError(t, eg.Wait())
 
 	b = &bytes.Buffer{}
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
@@ -124,6 +118,7 @@ dir zzz/bb
 dir zzz/bb/cc
 symlink:../../ zzz/bb/cc/dd
 file zzz/bb/cc/foo
+file zzz.aa
 `)
 
 	dt, err = ioutil.ReadFile(filepath.Join(dest, "zzz/bb/cc/foo"))
@@ -152,23 +147,31 @@ file zzz/bb/cc/foo
 
 	_, ok = chs.c["zzz/aa"]
 	assert.Equal(t, ok, false)
+
+	_, ok = chs.c["zzz.aa"]
+	assert.Equal(t, ok, false)
 }
 
-func sockPair() (Stream, Stream) {
+func sockPair(ctx context.Context) (Stream, Stream) {
 	c1 := make(chan *Packet, 32)
 	c2 := make(chan *Packet, 32)
-	return &fakeConn{c1, c2}, &fakeConn{c2, c1}
+	return &fakeConn{ctx, c1, c2}, &fakeConn{ctx, c2, c1}
 }
 
-func sockPairProto() (Stream, Stream) {
+func sockPairProto(ctx context.Context) (Stream, Stream) {
 	c1 := make(chan []byte, 32)
 	c2 := make(chan []byte, 32)
-	return &fakeConnProto{c1, c2}, &fakeConnProto{c2, c1}
+	return &fakeConnProto{ctx, c1, c2}, &fakeConnProto{ctx, c2, c1}
 }
 
 type fakeConn struct {
+	ctx      context.Context
 	recvChan chan *Packet
 	sendChan chan *Packet
+}
+
+func (fc *fakeConn) Context() context.Context {
+	return fc.ctx
 }
 
 func (fc *fakeConn) RecvMsg(m interface{}) error {
@@ -176,9 +179,13 @@ func (fc *fakeConn) RecvMsg(m interface{}) error {
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
-	p2 := <-fc.recvChan
-	*p = *p2
-	return nil
+	select {
+	case <-fc.ctx.Done():
+		return fc.ctx.Err()
+	case p2 := <-fc.recvChan:
+		*p = *p2
+		return nil
+	}
 }
 
 func (fc *fakeConn) SendMsg(m interface{}) error {
@@ -188,13 +195,22 @@ func (fc *fakeConn) SendMsg(m interface{}) error {
 	}
 	p2 := *p
 	p2.Data = append([]byte{}, p2.Data...)
-	fc.sendChan <- &p2
-	return nil
+	select {
+	case <-fc.ctx.Done():
+		return fc.ctx.Err()
+	case fc.sendChan <- &p2:
+		return nil
+	}
 }
 
 type fakeConnProto struct {
+	ctx      context.Context
 	recvChan chan []byte
 	sendChan chan []byte
+}
+
+func (fc *fakeConnProto) Context() context.Context {
+	return fc.ctx
 }
 
 func (fc *fakeConnProto) RecvMsg(m interface{}) error {
@@ -202,8 +218,12 @@ func (fc *fakeConnProto) RecvMsg(m interface{}) error {
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
-	dt := <-fc.recvChan
-	return p.Unmarshal(dt)
+	select {
+	case <-fc.ctx.Done():
+		return fc.ctx.Err()
+	case dt := <-fc.recvChan:
+		return p.Unmarshal(dt)
+	}
 }
 
 func (fc *fakeConnProto) SendMsg(m interface{}) error {
@@ -215,8 +235,12 @@ func (fc *fakeConnProto) SendMsg(m interface{}) error {
 	if err != nil {
 		return err
 	}
-	fc.sendChan <- dt
-	return nil
+	select {
+	case <-fc.ctx.Done():
+		return fc.ctx.Err()
+	case fc.sendChan <- dt:
+		return nil
+	}
 }
 
 type changes struct {

@@ -135,6 +135,38 @@ func TestValidatorBigJump(t *testing.T) {
 	}))
 	assert.Error(t, err)
 }
+func TestValidatorDot(t *testing.T) {
+	// dot is before / in naive sort
+	err := checkValid(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/a dir",
+		"ADD foo.2 dir",
+	}))
+	assert.NoError(t, err)
+}
+
+func TestValidatorDot2(t *testing.T) {
+	err := checkValid(changeStream([]string{
+		"ADD foo.a dir",
+		"ADD foo/a/a dir",
+	}))
+	assert.Error(t, err)
+
+	err = checkValid(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo. dir",
+		"ADD foo dir",
+	}))
+	assert.Error(t, err)
+}
+
+func TestValidatorSkipDir(t *testing.T) {
+	err := checkValid(changeStream([]string{
+		"ADD bar dir",
+		"ADD bar/foo/a dir",
+	}))
+	assert.Error(t, err)
+}
 
 func checkValid(inp []*change) error {
 	v := &Validator{}
