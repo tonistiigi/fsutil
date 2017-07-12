@@ -15,9 +15,10 @@ func main() {
 		panic("source path not set")
 	}
 
-	s := util.NewProtoStream(os.Stdin, os.Stdout)
+	ctx := context.Background()
+	s := util.NewProtoStream(ctx, os.Stdin, os.Stdout)
 
-	if err := fsutil.Send(context.Background(), s, flag.Args()[0], nil, nil); err != nil {
+	if err := fsutil.Send(ctx, s, flag.Args()[0], nil, nil); err != nil {
 		panic(err)
 	}
 }

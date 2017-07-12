@@ -15,9 +15,10 @@ func main() {
 		panic("dest path not set")
 	}
 
-	s := util.NewProtoStream(os.Stdin, os.Stdout)
+	ctx := context.Background()
+	s := util.NewProtoStream(ctx, os.Stdin, os.Stdout)
 
-	if err := fsutil.Receive(context.Background(), s, flag.Args()[0], nil); err != nil {
+	if err := fsutil.Receive(ctx, s, flag.Args()[0], nil); err != nil {
 		panic(err)
 	}
 }

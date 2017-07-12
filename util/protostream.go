@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/tonistiigi/fsutil"
+	"golang.org/x/net/context"
 )
 
 var bufPool = sync.Pool{
@@ -14,11 +15,12 @@ var bufPool = sync.Pool{
 	},
 }
 
-func NewProtoStream(r io.Reader, w io.Writer) fsutil.Stream {
-	return &protoStream{r, w}
+func NewProtoStream(ctx context.Context, r io.Reader, w io.Writer) fsutil.Stream {
+	return &protoStream{ctx, r, w}
 }
 
 type protoStream struct {
+	ctx context.Context
 	io.Reader
 	io.Writer
 }
@@ -67,4 +69,8 @@ func (fc *protoStream) SendMsg(m interface{}) error {
 	}
 	_, err := fc.Writer.Write(b)
 	return err
+}
+
+func (fc *protoStream) Context() context.Context {
+	return fc.ctx
 }
