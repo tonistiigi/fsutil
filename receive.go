@@ -12,7 +12,14 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func Receive(ctx context.Context, conn Stream, dest string, notifyHashed ChangeFunc, contentHasher ContentHasher, progressCb func(int, bool)) error {
+type ReceiveOpt struct {
+	NotifyHashed  ChangeFunc
+	ContentHasher ContentHasher
+	ProgressCb    func(int, bool)
+	Merge         bool
+}
+
+func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -21,9 +28,10 @@ func Receive(ctx context.Context, conn Stream, dest string, notifyHashed ChangeF
 		dest:          dest,
 		files:         make(map[string]uint32),
 		pipes:         make(map[uint32]io.WriteCloser),
-		notifyHashed:  notifyHashed,
-		contentHasher: contentHasher,
-		progressCb:    progressCb,
+		notifyHashed:  opt.NotifyHashed,
+		contentHasher: opt.ContentHasher,
+		progressCb:    opt.ProgressCb,
+		merge:         opt.Merge,
 	}
 	return r.run(ctx)
 }
@@ -36,6 +44,7 @@ type receiver struct {
 	mu         sync.RWMutex
 	muPipes    sync.RWMutex
 	progressCb func(int, bool)
+	merge      bool
 
 	notifyHashed   ChangeFunc
 	contentHasher  ContentHasher
@@ -96,7 +105,11 @@ func (r *receiver) run(ctx context.Context) error {
 	w := newDynamicWalker()
 
 	g.Go(func() error {
-		err := doubleWalkDiff(ctx, dw.HandleChange, GetWalkerFn(r.dest), w.fill)
+		destWalker := emptyWalker
+		if !r.merge {
+			destWalker = GetWalkerFn(r.dest)
+		}
+		err := doubleWalkDiff(ctx, dw.HandleChange, destWalker, w.fill)
 		if err != nil {
 			return err
 		}

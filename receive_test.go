@@ -47,7 +47,10 @@ func TestCopySimple(t *testing.T) {
 		return Send(ctx, s1, d, nil, nil)
 	})
 	eg.Go(func() error {
-		return Receive(ctx, s2, dest, chs.HandleChange, simpleSHA256Hasher, nil)
+		return Receive(ctx, s2, dest, ReceiveOpt{
+			NotifyHashed:  chs.HandleChange,
+			ContentHasher: simpleSHA256Hasher,
+		})
 	})
 
 	assert.NoError(t, eg.Wait())
@@ -105,7 +108,10 @@ file zzz.aa
 		return Send(ctx, s1, d, nil, nil)
 	})
 	eg.Go(func() error {
-		return Receive(ctx, s2, dest, chs.HandleChange, simpleSHA256Hasher, nil)
+		return Receive(ctx, s2, dest, ReceiveOpt{
+			NotifyHashed:  chs.HandleChange,
+			ContentHasher: simpleSHA256Hasher,
+		})
 	})
 
 	assert.NoError(t, eg.Wait())
