@@ -15,6 +15,7 @@ type ReceiveOpt struct {
 	ContentHasher ContentHasher
 	ProgressCb    func(int, bool)
 	Merge         bool
+	Filter        FilterFunc
 }
 
 func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) error {
@@ -30,6 +31,7 @@ func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) erro
 		contentHasher: opt.ContentHasher,
 		progressCb:    opt.ProgressCb,
 		merge:         opt.Merge,
+		filter:        opt.Filter,
 	}
 	return r.run(ctx)
 }
@@ -43,6 +45,7 @@ type receiver struct {
 	muPipes    sync.RWMutex
 	progressCb func(int, bool)
 	merge      bool
+	filter     FilterFunc
 
 	notifyHashed   ChangeFunc
 	contentHasher  ContentHasher
@@ -95,6 +98,7 @@ func (r *receiver) run(ctx context.Context) error {
 		AsyncDataCb:   r.asyncDataFunc,
 		NotifyCb:      r.notifyHashed,
 		ContentHasher: r.contentHasher,
+		Filter:        r.filter,
 	})
 	if err != nil {
 		return err
