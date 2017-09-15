@@ -4,12 +4,15 @@ package fsutil
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"hash"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 
+	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
@@ -34,7 +37,7 @@ func TestCopySimple(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(dest)
 
-	ts := NewTarsum("")
+	ts := newNotificationBuffer()
 	chs := &changes{fn: ts.HandleChange}
 
 	eg, ctx := errgroup.WithContext(context.Background())
@@ -44,7 +47,7 @@ func TestCopySimple(t *testing.T) {
 		return Send(ctx, s1, d, nil, nil)
 	})
 	eg.Go(func() error {
-		return Receive(ctx, s2, dest, chs.HandleChange, nil)
+		return Receive(ctx, s2, dest, chs.HandleChange, simpleSHA256Hasher, nil)
 	})
 
 	assert.NoError(t, eg.Wait())
@@ -71,17 +74,17 @@ file zzz.aa
 	assert.NoError(t, err)
 	assert.Equal(t, "dat2", string(dt))
 
-	h, err := ts.Hash("zzz/aa")
-	assert.NoError(t, err)
-	assert.Equal(t, h, "b1c874520ef2887ebace8ff70591ff248138b19197e9e232df9c9866cb581705")
+	h, ok := ts.Hash("zzz/aa")
+	assert.True(t, ok)
+	assert.Equal(t, h, digest.Digest("sha256:99b6ef96ee0572b5b3a4eb28f00b715d820bfd73836e59cc1565e241f4d1bb2f"))
 
-	h, err = ts.Hash("foo2")
-	assert.NoError(t, err)
-	assert.Equal(t, h, "4524c0852a5745ea830e63da563f58e6b507ca1bfdf0075db3baa627317651cb")
+	h, ok = ts.Hash("foo2")
+	assert.True(t, ok)
+	assert.Equal(t, h, digest.Digest("sha256:dd2529f7749ba45ea55de3b2e10086d6494cc45a94e57650c2882a6a14b4ff32"))
 
-	h, err = ts.Hash("zzz/bb/cc/dd")
-	assert.NoError(t, err)
-	assert.Equal(t, h, "320a4733517590b42d628d51ac2ec8f305fc985ec36ac9bcb7d4e7376441c851")
+	h, ok = ts.Hash("zzz/bb/cc/dd")
+	assert.True(t, ok)
+	assert.Equal(t, h, digest.Digest("sha256:eca07e8f2d09bd574ea2496312e6de1685ef15b8e6a49a534ed9e722bcac8adc"))
 
 	k, ok := chs.c["zzz/aa"]
 	assert.Equal(t, ok, true)
@@ -102,7 +105,7 @@ file zzz.aa
 		return Send(ctx, s1, d, nil, nil)
 	})
 	eg.Go(func() error {
-		return Receive(ctx, s2, dest, chs.HandleChange, nil)
+		return Receive(ctx, s2, dest, chs.HandleChange, simpleSHA256Hasher, nil)
 	})
 
 	assert.NoError(t, eg.Wait())
@@ -125,17 +128,16 @@ file zzz.aa
 	assert.NoError(t, err)
 	assert.Equal(t, "data5", string(dt))
 
-	h, err = ts.Hash("zzz/bb/cc/dd")
-	assert.NoError(t, err)
-	assert.Equal(t, h, "320a4733517590b42d628d51ac2ec8f305fc985ec36ac9bcb7d4e7376441c851")
+	h, ok = ts.Hash("zzz/bb/cc/dd")
+	assert.True(t, ok)
+	assert.Equal(t, h, digest.Digest("sha256:eca07e8f2d09bd574ea2496312e6de1685ef15b8e6a49a534ed9e722bcac8adc"))
 
-	h, err = ts.Hash("zzz/bb/cc/foo")
-	assert.NoError(t, err)
-	assert.Equal(t, h, "d953e7f96eda58e257c2bfc033e5de66a541999d884b46d235709e6414898638")
+	h, ok = ts.Hash("zzz/bb/cc/foo")
+	assert.True(t, ok)
+	assert.Equal(t, h, digest.Digest("sha256:cd14a931fc2e123ded338093f2864b173eecdee578bba6ec24d0724272326c3a"))
 
-	h, err = ts.Hash("foo2")
-	assert.NoError(t, err)
-	assert.Equal(t, h, "foo2")
+	_, ok = ts.Hash("foo2")
+	assert.False(t, ok)
 
 	k, ok = chs.c["foo2"]
 	assert.Equal(t, ok, true)
@@ -257,4 +259,16 @@ func (c *changes) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err er
 	c.c[p] = kind
 	c.mu.Unlock()
 	return c.fn(kind, p, fi, err)
+}
+
+func simpleSHA256Hasher(s *Stat) (hash.Hash, error) {
+	h := sha256.New()
+	ss := *s
+	ss.ModTime = 0
+	dt, err := ss.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	h.Write(dt)
+	return h, nil
 }
