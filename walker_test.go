@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -70,6 +71,33 @@ dir foo
 file foo/bar2
 `, string(b.Bytes()))
 
+}
+
+func TestWalkerMap(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD bar file",
+		"ADD foo dir",
+		"ADD foo2 file",
+		"ADD foo/bar2 file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &WalkOpt{
+		Map: func(s *Stat) bool {
+			if strings.HasPrefix(s.Path, "foo") {
+				s.Path = "_" + s.Path
+				return true
+			}
+			return false
+		},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, `dir _foo
+file _foo/bar2
+file _foo2
+`, string(b.Bytes()))
 }
 
 func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
