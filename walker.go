@@ -15,6 +15,7 @@ import (
 type WalkOpt struct {
 	IncludePaths    []string // todo: remove?
 	ExcludePatterns []string
+	Map             func(*Stat) bool
 }
 
 func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) error {
@@ -138,7 +139,12 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if err := fn(path, &StatInfo{stat}, nil); err != nil {
+			if opt != nil && opt.Map != nil {
+				if allowed := opt.Map(stat); !allowed {
+					return nil
+				}
+			}
+			if err := fn(stat.Path, &StatInfo{stat}, nil); err != nil {
 				return err
 			}
 		}
