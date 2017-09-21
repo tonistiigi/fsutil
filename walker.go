@@ -13,7 +13,7 @@ import (
 )
 
 type WalkOpt struct {
-	IncludePaths    []string // todo: remove?
+	IncludePatterns []string
 	ExcludePatterns []string
 	Map             func(*Stat) bool
 }
@@ -58,9 +58,9 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 
 		if opt != nil {
-			if opt.IncludePaths != nil {
+			if opt.IncludePatterns != nil {
 				matched := false
-				for _, p := range opt.IncludePaths {
+				for _, p := range opt.IncludePatterns {
 					if m, _ := filepath.Match(p, path); m {
 						matched = true
 						break
