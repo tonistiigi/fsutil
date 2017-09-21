@@ -41,7 +41,7 @@ func TestWalkerInclude(t *testing.T) {
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
 	err = Walk(context.Background(), d, &WalkOpt{
-		IncludePaths: []string{"bar", "bar/foo"},
+		IncludePatterns: []string{"bar", "bar/foo"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
