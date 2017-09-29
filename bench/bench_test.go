@@ -6,10 +6,10 @@ import (
 	"os/exec"
 	"testing"
 
+	"github.com/containerd/continuity"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/reexec"
-	"github.com/stevvooe/continuity"
 )
 
 func init() {
