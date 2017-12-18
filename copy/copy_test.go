@@ -1,14 +1,17 @@
 package fs
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"testing"
 
 	_ "crypto/sha256"
 
 	"github.com/containerd/containerd/fs/fstest"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 )
 
 // TODO: Create copy directory which requires privilege
@@ -46,6 +49,48 @@ func TestCopyDirectoryWithLocalSymlink(t *testing.T) {
 	}
 }
 
+func TestCopySingleFile(t *testing.T) {
+	t1, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t1)
+
+	apply := fstest.Apply(
+		fstest.CreateFile("foo.txt", []byte("contents"), 0755),
+	)
+
+	require.NoError(t, apply.Apply(t1))
+
+	t2, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), t2)
+	require.NoError(t, err)
+
+	err = fstest.CheckDirectoryEqual(t1, t2)
+	require.NoError(t, err)
+
+	t3, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), filepath.Join(t3, "foo.txt"))
+	require.NoError(t, err)
+
+	err = fstest.CheckDirectoryEqual(t1, t2)
+	require.NoError(t, err)
+
+	t4, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), filepath.Join(t4, "foo2.txt"))
+	require.NoError(t, err)
+
+	_, err = os.Stat(filepath.Join(t4, "foo2.txt"))
+	require.NoError(t, err)
+}
+
 func testCopy(apply fstest.Applier) error {
 	t1, err := ioutil.TempDir("", "test-copy-src-")
 	if err != nil {
@@ -63,7 +108,7 @@ func testCopy(apply fstest.Applier) error {
 		return errors.Wrap(err, "failed to apply changes")
 	}
 
-	if err := CopyDir(t2, t1); err != nil {
+	if err := Copy(context.TODO(), t1+"/.", t2); err != nil {
 		return errors.Wrap(err, "failed to copy")
 	}
 

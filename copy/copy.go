@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -16,23 +17,108 @@ var bufferPool = &sync.Pool{
 	},
 }
 
-// CopyDir copies the directory from src to dst.
-// Most efficient copy of files is attempted.
-func CopyDir(dst, src string) error {
-	inodes := map[uint64]string{}
-	return copyDirectory(dst, src, inodes)
+func Copy(ctx context.Context, src, dst string) error {
+	srcFollowed, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return err
+	}
+
+	srcBase := filepath.Base(src)
+
+	ensureDstPath := dst
+	if d, f := filepath.Split(dst); f == "" {
+		ensureDstPath = d
+	}
+	if err := os.MkdirAll(ensureDstPath, 0700); err != nil {
+		return err
+	}
+
+	return newCopier().copy(ctx, srcBase, srcFollowed, filepath.Clean(dst))
 }
 
-func copyDirectory(dst, src string, inodes map[uint64]string) error {
-	stat, err := os.Stat(src)
+type copier struct {
+	inodes map[uint64]string
+}
+
+func newCopier() *copier {
+	return &copier{inodes: map[uint64]string{}}
+}
+
+func (c *copier) copy(ctx context.Context, base, src, dst string) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+	dstBase := base
+	fi, err := os.Lstat(src)
 	if err != nil {
 		return errors.Wrapf(err, "failed to stat %s", src)
 	}
+
+	if _, err := os.Lstat(dst); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		dst, dstBase = filepath.Split(dst)
+	}
+
+	target := filepath.Join(dst, dstBase)
+	if !fi.IsDir() {
+		if err := ensureEmptyFileTarget(target); err != nil {
+			return err
+		}
+	}
+
+	switch {
+	case fi.IsDir():
+		if err := c.copyDirectory(ctx, src, target, fi); err != nil {
+			return err
+		}
+	case (fi.Mode() & os.ModeType) == 0:
+		link, err := getLinkSource(target, fi, c.inodes)
+		if err != nil {
+			return errors.Wrap(err, "failed to get hardlink")
+		}
+		if link != "" {
+			if err := os.Link(link, target); err != nil {
+				return errors.Wrap(err, "failed to create hard link")
+			}
+		} else if err := copyFile(src, target); err != nil {
+			return errors.Wrap(err, "failed to copy files")
+		}
+	case (fi.Mode() & os.ModeSymlink) == os.ModeSymlink:
+		link, err := os.Readlink(src)
+		if err != nil {
+			return errors.Wrapf(err, "failed to read link: %s", src)
+		}
+		if err := os.Symlink(link, target); err != nil {
+			return errors.Wrapf(err, "failed to create symlink: %s", target)
+		}
+	case (fi.Mode() & os.ModeDevice) == os.ModeDevice:
+		if err := copyDevice(target, fi); err != nil {
+			return errors.Wrapf(err, "failed to create device")
+		}
+	default:
+		// TODO: Support pipes and sockets
+		return errors.Wrapf(err, "unsupported mode %s", fi.Mode())
+	}
+	if err := copyFileInfo(fi, target); err != nil {
+		return errors.Wrap(err, "failed to copy file info")
+	}
+
+	if err := copyXAttrs(target, src); err != nil {
+		return errors.Wrap(err, "failed to copy xattrs")
+	}
+	return nil
+}
+
+func (c *copier) copyDirectory(ctx context.Context, src, dst string, stat os.FileInfo) error {
 	if !stat.IsDir() {
 		return errors.Errorf("source is not directory")
 	}
 
-	if st, err := os.Stat(dst); err != nil {
+	if st, err := os.Lstat(dst); err != nil {
 		if err := os.Mkdir(dst, stat.Mode()); err != nil {
 			return errors.Wrapf(err, "failed to mkdir %s", dst)
 		}
@@ -44,63 +130,36 @@ func copyDirectory(dst, src string, inodes map[uint64]string) error {
 		}
 	}
 
+	if err := copyFileInfo(stat, dst); err != nil {
+		return errors.Wrapf(err, "failed to copy file info for %s", dst)
+	}
+
 	fis, err := ioutil.ReadDir(src)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read %s", src)
 	}
 
-	if err := copyFileInfo(stat, dst); err != nil {
-		return errors.Wrapf(err, "failed to copy file info for %s", dst)
-	}
-
 	for _, fi := range fis {
-		source := filepath.Join(src, fi.Name())
-		target := filepath.Join(dst, fi.Name())
-
-		switch {
-		case fi.IsDir():
-			if err := copyDirectory(target, source, inodes); err != nil {
-				return err
-			}
-			continue
-		case (fi.Mode() & os.ModeType) == 0:
-			link, err := getLinkSource(target, fi, inodes)
-			if err != nil {
-				return errors.Wrap(err, "failed to get hardlink")
-			}
-			if link != "" {
-				if err := os.Link(link, target); err != nil {
-					return errors.Wrap(err, "failed to create hard link")
-				}
-			} else if err := copyFile(source, target); err != nil {
-				return errors.Wrap(err, "failed to copy files")
-			}
-		case (fi.Mode() & os.ModeSymlink) == os.ModeSymlink:
-			link, err := os.Readlink(source)
-			if err != nil {
-				return errors.Wrapf(err, "failed to read link: %s", source)
-			}
-			if err := os.Symlink(link, target); err != nil {
-				return errors.Wrapf(err, "failed to create symlink: %s", target)
-			}
-		case (fi.Mode() & os.ModeDevice) == os.ModeDevice:
-			if err := copyDevice(target, fi); err != nil {
-				return errors.Wrapf(err, "failed to create device")
-			}
-		default:
-			// TODO: Support pipes and sockets
-			return errors.Wrapf(err, "unsupported mode %s", fi.Mode())
-		}
-		if err := copyFileInfo(fi, target); err != nil {
-			return errors.Wrap(err, "failed to copy file info")
-		}
-
-		if err := copyXAttrs(target, source); err != nil {
-			return errors.Wrap(err, "failed to copy xattrs")
+		if err := c.copy(ctx, fi.Name(), filepath.Join(src, fi.Name()), filepath.Join(dst, fi.Name())); err != nil {
+			return err
 		}
 	}
 
 	return nil
+}
+
+func ensureEmptyFileTarget(dst string) error {
+	fi, err := os.Lstat(dst)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if fi.IsDir() {
+		return errors.Errorf("cannot replace to directory %s with file", dst)
+	}
+	return os.Remove(dst)
 }
 
 func copyFile(source, target string) error {
