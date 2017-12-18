@@ -11,9 +11,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func copyFileInfo(fi os.FileInfo, name string) error {
+func (c *copier) copyFileInfo(fi os.FileInfo, name string) error {
 	st := fi.Sys().(*syscall.Stat_t)
-	if err := os.Lchown(name, int(st.Uid), int(st.Gid)); err != nil {
+	uid, gid := int(st.Uid), int(st.Gid)
+	if c.chown != nil {
+		uid, gid = c.chown.Uid, c.chown.Gid
+	}
+	if err := os.Lchown(name, uid, gid); err != nil {
 		return errors.Wrapf(err, "failed to chown %s", name)
 	}
 

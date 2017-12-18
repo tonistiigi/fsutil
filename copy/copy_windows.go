@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func copyFileInfo(fi os.FileInfo, name string) error {
+func (c *copier) copyFileInfo(fi os.FileInfo, name string) error {
 	if err := os.Chmod(name, fi.Mode()); err != nil {
 		return errors.Wrapf(err, "failed to chmod %s", name)
 	}
