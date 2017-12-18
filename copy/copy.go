@@ -17,7 +17,12 @@ var bufferPool = &sync.Pool{
 	},
 }
 
-func Copy(ctx context.Context, src, dst string) error {
+func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
+	var ci CopyInfo
+	for _, o := range opts {
+		o(&ci)
+	}
+
 	srcFollowed, err := filepath.EvalSymlinks(src)
 	if err != nil {
 		return err
@@ -33,15 +38,32 @@ func Copy(ctx context.Context, src, dst string) error {
 		return err
 	}
 
-	return newCopier().copy(ctx, srcBase, srcFollowed, filepath.Clean(dst))
+	return newCopier(ci.Chown).copy(ctx, srcBase, srcFollowed, filepath.Clean(dst))
+}
+
+type ChownOpt struct {
+	Uid, Gid int
+}
+
+type CopyInfo struct {
+	Chown *ChownOpt
+}
+
+type Opt func(*CopyInfo)
+
+func WithChown(uid, gid int) Opt {
+	return func(ci *CopyInfo) {
+		ci.Chown = &ChownOpt{Uid: uid, Gid: gid}
+	}
 }
 
 type copier struct {
+	chown  *ChownOpt
 	inodes map[uint64]string
 }
 
-func newCopier() *copier {
-	return &copier{inodes: map[uint64]string{}}
+func newCopier(chown *ChownOpt) *copier {
+	return &copier{inodes: map[uint64]string{}, chown: chown}
 }
 
 func (c *copier) copy(ctx context.Context, base, src, dst string) error {
@@ -103,7 +125,7 @@ func (c *copier) copy(ctx context.Context, base, src, dst string) error {
 		// TODO: Support pipes and sockets
 		return errors.Wrapf(err, "unsupported mode %s", fi.Mode())
 	}
-	if err := copyFileInfo(fi, target); err != nil {
+	if err := c.copyFileInfo(fi, target); err != nil {
 		return errors.Wrap(err, "failed to copy file info")
 	}
 
@@ -128,10 +150,6 @@ func (c *copier) copyDirectory(ctx context.Context, src, dst string, stat os.Fil
 		if err := os.Chmod(dst, stat.Mode()); err != nil {
 			return errors.Wrapf(err, "failed to chmod on %s", dst)
 		}
-	}
-
-	if err := copyFileInfo(stat, dst); err != nil {
-		return errors.Wrapf(err, "failed to copy file info for %s", dst)
 	}
 
 	fis, err := ioutil.ReadDir(src)
