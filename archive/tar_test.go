@@ -436,7 +436,7 @@ func testApply(a fstest.Applier) error {
 		return errors.Wrap(err, "failed to start command")
 	}
 
-	if _, err := Apply(context.Background(), dest, arch); err != nil {
+	if _, err := Extract(context.Background(), dest, arch); err != nil {
 		return errors.Wrap(err, "failed to apply tar stream")
 	}
 
@@ -459,7 +459,7 @@ func makeWriterToTarTest(wt WriterToTar, a fstest.Applier, validate func(string)
 
 		tr := TarFromWriterTo(wt)
 
-		if _, err := Apply(context.Background(), td, tr); err != nil {
+		if _, err := Extract(context.Background(), td, tr); err != nil {
 			t.Fatalf("Failed to apply tar: %v", err)
 		}
 

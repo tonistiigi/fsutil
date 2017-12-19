@@ -22,9 +22,8 @@ var bufferPool = &sync.Pool{
 	},
 }
 
-// Apply applies a tar stream of an OCI style diff tar.
-// See https://github.com/opencontainers/image-spec/blob/master/layer.md#applying-changesets
-func Apply(ctx context.Context, root string, r io.Reader) (int64, error) {
+// Extract extracts tar archive to a directory
+func Extract(ctx context.Context, root string, r io.Reader) (int64, error) {
 	root = filepath.Clean(root)
 
 	var (
