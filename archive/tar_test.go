@@ -15,7 +15,6 @@ import (
 
 	_ "crypto/sha256"
 
-	"github.com/containerd/containerd/fs"
 	"github.com/containerd/containerd/fs/fstest"
 	"github.com/pkg/errors"
 )
@@ -59,11 +58,11 @@ func TestBreakouts(t *testing.T) {
 	errFileDiff := errors.New("files differ")
 	sameFile := func(f1, f2 string) func(string) error {
 		return func(root string) error {
-			p1, err := fs.RootPath(root, f1)
+			p1, err := RootPath(root, f1)
 			if err != nil {
 				return err
 			}
-			p2, err := fs.RootPath(root, f2)
+			p2, err := RootPath(root, f2)
 			if err != nil {
 				return err
 			}
@@ -357,7 +356,7 @@ func TestApplyTar(t *testing.T) {
 	directoriesExist := func(dirs ...string) func(string) error {
 		return func(root string) error {
 			for _, d := range dirs {
-				p, err := fs.RootPath(root, d)
+				p, err := RootPath(root, d)
 				if err != nil {
 					return err
 				}

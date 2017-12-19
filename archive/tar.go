@@ -10,7 +10,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/containerd/containerd/fs"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -65,7 +64,7 @@ func Extract(ctx context.Context, root string, r io.Reader) (int64, error) {
 
 		// Split name and resolve symlinks for root directory.
 		ppath, base := filepath.Split(hdr.Name)
-		ppath, err = fs.RootPath(root, ppath)
+		ppath, err = RootPath(root, ppath)
 		if err != nil {
 			return 0, errors.Wrap(err, "failed to get root path")
 		}
@@ -121,7 +120,7 @@ func Extract(ctx context.Context, root string, r io.Reader) (int64, error) {
 	}
 
 	for _, hdr := range dirs {
-		path, err := fs.RootPath(root, hdr.Name)
+		path, err := RootPath(root, hdr.Name)
 		if err != nil {
 			return 0, err
 		}
@@ -176,7 +175,7 @@ func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header
 		}
 
 	case tar.TypeLink:
-		targetPath, err := fs.RootPath(extractDir, hdr.Linkname)
+		targetPath, err := RootPath(extractDir, hdr.Linkname)
 		if err != nil {
 			return err
 		}
