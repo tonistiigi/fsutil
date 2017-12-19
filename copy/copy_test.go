@@ -91,6 +91,48 @@ func TestCopySingleFile(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCopyWildcards(t *testing.T) {
+	t1, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t1)
+
+	apply := fstest.Apply(
+		fstest.CreateFile("foo.txt", []byte("foo-contents"), 0755),
+		fstest.CreateFile("foo.go", []byte("go-contents"), 0755),
+		fstest.CreateFile("bar.txt", []byte("bar-contents"), 0755),
+	)
+
+	require.NoError(t, apply.Apply(t1))
+
+	t2, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo*"), t2)
+	require.Error(t, err)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo*"), t2, AllowWildcards)
+	require.NoError(t, err)
+
+	_, err = os.Stat(filepath.Join(t2, "foo.txt"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(t2, "foo.go"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(t2, "bar.txt"))
+	require.Error(t, err)
+	require.True(t, os.IsNotExist(err))
+
+	t2, err = ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "bar*"), filepath.Join(t2, "foo.txt"), AllowWildcards)
+	require.NoError(t, err)
+	dt, err := ioutil.ReadFile(filepath.Join(t2, "foo.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "bar-contents", string(dt))
+}
+
 func testCopy(apply fstest.Applier) error {
 	t1, err := ioutil.TempDir("", "test-copy-src-")
 	if err != nil {

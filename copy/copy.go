@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -17,28 +19,49 @@ var bufferPool = &sync.Pool{
 	},
 }
 
+// Copy copies files using `cp -a` semantics.
+// Copy is likely unsafe to be used in non-containerized environments.
 func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 	var ci CopyInfo
 	for _, o := range opts {
 		o(&ci)
 	}
 
-	srcFollowed, err := filepath.EvalSymlinks(src)
-	if err != nil {
-		return err
-	}
-
-	srcBase := filepath.Base(src)
-
 	ensureDstPath := dst
-	if d, f := filepath.Split(dst); f == "" {
+	if d, f := filepath.Split(dst); f != "" && f != "." {
 		ensureDstPath = d
 	}
 	if err := os.MkdirAll(ensureDstPath, 0700); err != nil {
 		return err
 	}
+	dst = filepath.Clean(dst)
 
-	return newCopier(ci.Chown).copy(ctx, srcBase, srcFollowed, filepath.Clean(dst))
+	c := newCopier(ci.Chown)
+	srcs := []string{src}
+
+	if ci.AllowWildcards {
+		d1, d2 := splitWildcards(src)
+		if d2 != "" {
+			matches, err := resolveWildcards(d1, d2)
+			if err != nil {
+				return err
+			}
+			srcs = matches
+		}
+	}
+
+	for _, src := range srcs {
+		srcFollowed, err := filepath.EvalSymlinks(src)
+		if err != nil {
+			return err
+		}
+		srcBase := filepath.Base(src)
+		if err := c.copy(ctx, srcBase, srcFollowed, dst); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 type ChownOpt struct {
@@ -46,7 +69,8 @@ type ChownOpt struct {
 }
 
 type CopyInfo struct {
-	Chown *ChownOpt
+	Chown          *ChownOpt
+	AllowWildcards bool
 }
 
 type Opt func(*CopyInfo)
@@ -55,6 +79,10 @@ func WithChown(uid, gid int) Opt {
 	return func(ci *CopyInfo) {
 		ci.Chown = &ChownOpt{Uid: uid, Gid: gid}
 	}
+}
+
+func AllowWildcards(ci *CopyInfo) {
+	ci.AllowWildcards = true
 }
 
 type copier struct {
@@ -80,7 +108,7 @@ func (c *copier) copy(ctx context.Context, base, src, dst string) error {
 
 	if _, err := os.Lstat(dst); err != nil {
 		if !os.IsNotExist(err) {
-			return err
+			return errors.Wrap(err, "failed to lstat destination directory")
 		}
 		dst, dstBase = filepath.Split(dst)
 	}
@@ -141,6 +169,9 @@ func (c *copier) copyDirectory(ctx context.Context, src, dst string, stat os.Fil
 	}
 
 	if st, err := os.Lstat(dst); err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
 		if err := os.Mkdir(dst, stat.Mode()); err != nil {
 			return errors.Wrapf(err, "failed to mkdir %s", dst)
 		}
@@ -172,7 +203,7 @@ func ensureEmptyFileTarget(dst string) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return err
+		return errors.Wrap(err, "failed to lstat file target")
 	}
 	if fi.IsDir() {
 		return errors.Errorf("cannot replace to directory %s with file", dst)
@@ -193,4 +224,85 @@ func copyFile(source, target string) error {
 	defer tgt.Close()
 
 	return copyFileContent(tgt, src)
+}
+
+func containsWildcards(name string) bool {
+	isWindows := runtime.GOOS == "windows"
+	for i := 0; i < len(name); i++ {
+		ch := name[i]
+		if ch == '\\' && !isWindows {
+			i++
+		} else if ch == '*' || ch == '?' || ch == '[' {
+			return true
+		}
+	}
+	return false
+}
+
+func splitWildcards(p string) (d1, d2 string) {
+	parts := strings.Split(filepath.Join(p), string(filepath.Separator))
+	var p1, p2 []string
+	var found bool
+	for _, p := range parts {
+		if !found && containsWildcards(p) {
+			found = true
+		}
+		if p == "" {
+			p = "/"
+		}
+		if !found {
+			p1 = append(p1, p)
+		} else {
+			p2 = append(p2, p)
+		}
+	}
+	return filepath.Join(p1...), filepath.Join(p2...)
+}
+
+func resolveWildcards(basePath, comp string) ([]string, error) {
+	var out []string
+	err := filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := rel(basePath, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		if match, _ := filepath.Match(comp, rel); !match {
+			return nil
+		}
+		out = append(out, path)
+		if info.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, errors.Errorf("no matches found: %s", filepath.Join(basePath, comp))
+	}
+	return out, nil
+}
+
+// rel makes a path relative to base path. Same as `filepath.Rel` but can also
+// handle UUID paths in windows.
+func rel(basepath, targpath string) (string, error) {
+	// filepath.Rel can't handle UUID paths in windows
+	if runtime.GOOS == "windows" {
+		pfx := basepath + `\`
+		if strings.HasPrefix(targpath, pfx) {
+			p := strings.TrimPrefix(targpath, pfx)
+			if p == "" {
+				p = "."
+			}
+			return p, nil
+		}
+	}
+	return filepath.Rel(basepath, targpath)
 }
