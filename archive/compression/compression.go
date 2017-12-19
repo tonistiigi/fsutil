@@ -3,9 +3,11 @@ package compression
 import (
 	"bufio"
 	"bytes"
+	"compress/bzip2"
 	"compress/gzip"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"sync"
 )
 
@@ -17,8 +19,12 @@ type (
 const (
 	// Uncompressed represents the uncompressed.
 	Uncompressed Compression = iota
+	// Bzip2 is bzip2 compression algorithm.
+	Bzip2
 	// Gzip is gzip compression algorithm.
 	Gzip
+	// Xz is xz compression algorithm.
+	Xz
 )
 
 var (
@@ -28,33 +34,26 @@ var (
 )
 
 type readCloserWrapper struct {
-	io.Reader
+	io.ReadCloser
 	closer func() error
 }
 
 func (r *readCloserWrapper) Close() error {
+	err := r.ReadCloser.Close()
 	if r.closer != nil {
-		return r.closer()
+		if err1 := r.closer(); err == nil {
+			return err1
+		}
 	}
-	return nil
-}
-
-type writeCloserWrapper struct {
-	io.Writer
-	closer func() error
-}
-
-func (w *writeCloserWrapper) Close() error {
-	if w.closer != nil {
-		w.closer()
-	}
-	return nil
+	return err
 }
 
 // DetectCompression detects the compression algorithm of the source.
 func DetectCompression(source []byte) Compression {
 	for compression, m := range map[Compression][]byte{
-		Gzip: {0x1F, 0x8B, 0x08},
+		Bzip2: {0x42, 0x5A, 0x68},
+		Gzip:  {0x1F, 0x8B, 0x08},
+		Xz:    {0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00},
 	} {
 		if len(source) < len(m) {
 			// Len too short
@@ -89,7 +88,7 @@ func DecompressStream(archive io.Reader) (io.ReadCloser, error) {
 	}
 	switch compression := DetectCompression(bs); compression {
 	case Uncompressed:
-		readBufWrapper := &readCloserWrapper{buf, closer}
+		readBufWrapper := &readCloserWrapper{ioutil.NopCloser(buf), closer}
 		return readBufWrapper, nil
 	case Gzip:
 		gzReader, err := gzip.NewReader(buf)
@@ -98,28 +97,18 @@ func DecompressStream(archive io.Reader) (io.ReadCloser, error) {
 		}
 		readBufWrapper := &readCloserWrapper{gzReader, closer}
 		return readBufWrapper, nil
+	case Bzip2:
+		bz2Reader := bzip2.NewReader(buf)
+		readBufWrapper := &readCloserWrapper{ioutil.NopCloser(bz2Reader), closer}
+		return readBufWrapper, nil
+	case Xz:
+		xzReader, err := xzDecompress(buf)
+		if err != nil {
+			return nil, err
+		}
+		readBufWrapper := &readCloserWrapper{xzReader, closer}
+		return readBufWrapper, nil
 	default:
-		return nil, fmt.Errorf("unsupported compression format %s", (&compression).Extension())
+		return nil, fmt.Errorf("unsupported compression format %s", compression)
 	}
-}
-
-// CompressStream compresseses the dest with specified compression algorithm.
-func CompressStream(dest io.Writer, compression Compression) (io.WriteCloser, error) {
-	switch compression {
-	case Uncompressed:
-		return &writeCloserWrapper{dest, nil}, nil
-	case Gzip:
-		return gzip.NewWriter(dest), nil
-	default:
-		return nil, fmt.Errorf("unsupported compression format %s", (&compression).Extension())
-	}
-}
-
-// Extension returns the extension of a file that uses the specified compression algorithm.
-func (compression *Compression) Extension() string {
-	switch *compression {
-	case Gzip:
-		return "gz"
-	}
-	return ""
 }
