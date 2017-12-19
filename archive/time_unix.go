@@ -5,9 +5,8 @@ package archive
 import (
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/pkg/errors"
+	"golang.org/x/sys/unix"
 )
 
 func chtimes(path string, atime, mtime time.Time) error {

@@ -3,13 +3,11 @@
 package archive
 
 import (
+	"archive/tar"
 	"os"
-	"sync"
 	"syscall"
 
 	"github.com/containerd/continuity/sysx"
-	"github.com/dmcgowan/go-tar"
-	"github.com/opencontainers/runc/libcontainer/system"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
@@ -71,24 +69,9 @@ func skipFile(*tar.Header) bool {
 	return false
 }
 
-var (
-	inUserNS bool
-	nsOnce   sync.Once
-)
-
-func setInUserNS() {
-	inUserNS = system.RunningInUserNS()
-}
-
 // handleTarTypeBlockCharFifo is an OS-specific helper function used by
 // createTarFile to handle the following types of header: Block; Char; Fifo
 func handleTarTypeBlockCharFifo(hdr *tar.Header, path string) error {
-	nsOnce.Do(setInUserNS)
-	if inUserNS {
-		// cannot create a device if running in user namespace
-		return nil
-	}
-
 	mode := uint32(hdr.Mode & 07777)
 	switch hdr.Typeflag {
 	case tar.TypeBlock:

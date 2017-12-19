@@ -1,22 +1,18 @@
 package archive
 
 import (
+	"archive/tar"
 	"context"
-	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/containerd/containerd/fs"
-	"github.com/containerd/containerd/log"
-	"github.com/dmcgowan/go-tar"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 var bufferPool = &sync.Pool{
@@ -25,65 +21,6 @@ var bufferPool = &sync.Pool{
 		return &buffer
 	},
 }
-
-// Diff returns a tar stream of the computed filesystem
-// difference between the provided directories.
-//
-// Produces a tar using OCI style file markers for deletions. Deleted
-// files will be prepended with the prefix ".wh.". This style is
-// based off AUFS whiteouts.
-// See https://github.com/opencontainers/image-spec/blob/master/layer.md
-func Diff(ctx context.Context, a, b string) io.ReadCloser {
-	r, w := io.Pipe()
-
-	go func() {
-		err := WriteDiff(ctx, w, a, b)
-		if err = w.CloseWithError(err); err != nil {
-			log.G(ctx).WithError(err).Debugf("closing tar pipe failed")
-		}
-	}()
-
-	return r
-}
-
-// WriteDiff writes a tar stream of the computed difference between the
-// provided directories.
-//
-// Produces a tar using OCI style file markers for deletions. Deleted
-// files will be prepended with the prefix ".wh.". This style is
-// based off AUFS whiteouts.
-// See https://github.com/opencontainers/image-spec/blob/master/layer.md
-func WriteDiff(ctx context.Context, w io.Writer, a, b string) error {
-	cw := newChangeWriter(w, b)
-	err := fs.Changes(ctx, a, b, cw.HandleChange)
-	if err != nil {
-		return errors.Wrap(err, "failed to create diff tar stream")
-	}
-	return cw.Close()
-}
-
-const (
-	// whiteoutPrefix prefix means file is a whiteout. If this is followed by a
-	// filename this means that file has been removed from the base layer.
-	// See https://github.com/opencontainers/image-spec/blob/master/layer.md#whiteouts
-	whiteoutPrefix = ".wh."
-
-	// whiteoutMetaPrefix prefix means whiteout has a special meaning and is not
-	// for removing an actual file. Normally these files are excluded from exported
-	// archives.
-	whiteoutMetaPrefix = whiteoutPrefix + whiteoutPrefix
-
-	// whiteoutLinkDir is a directory AUFS uses for storing hardlink links to other
-	// layers. Normally these should not go into exported archives and all changed
-	// hardlinks should be copied to the top layer.
-	whiteoutLinkDir = whiteoutMetaPrefix + "plnk"
-
-	// whiteoutOpaqueDir file means directory has been made opaque - meaning
-	// readdir calls to this directory do not follow to lower layers.
-	whiteoutOpaqueDir = whiteoutMetaPrefix + ".opq"
-
-	paxSchilyXattr = "SCHILY.xattrs."
-)
 
 // Apply applies a tar stream of an OCI style diff tar.
 // See https://github.com/opencontainers/image-spec/blob/master/layer.md#applying-changesets
@@ -98,10 +35,6 @@ func Apply(ctx context.Context, root string, r io.Reader) (int64, error) {
 		// Used for handling opaque directory markers which
 		// may occur out of order
 		unpackedPaths = make(map[string]struct{})
-
-		// Used for aufs plink directory
-		aufsTempdir   = ""
-		aufsHardlinks = make(map[string]*tar.Header)
 	)
 
 	// Iterate through the files in the archive.
@@ -127,7 +60,7 @@ func Apply(ctx context.Context, root string, r io.Reader) (int64, error) {
 		hdr.Name = filepath.Clean(hdr.Name)
 
 		if skipFile(hdr) {
-			log.G(ctx).Warnf("file %q ignored: archive may not be supported on system", hdr.Name)
+			logrus.Warnf("file %q ignored: archive may not be supported on system", hdr.Name)
 			continue
 		}
 
@@ -142,7 +75,7 @@ func Apply(ctx context.Context, root string, r io.Reader) (int64, error) {
 		// already resolved based on the root before adding to parent.
 		path := filepath.Join(ppath, filepath.Join("/", base))
 		if path == root {
-			log.G(ctx).Debugf("file %q ignored: resolved to root", hdr.Name)
+			logrus.Debugf("file %q ignored: resolved to root", hdr.Name)
 			continue
 		}
 
@@ -161,70 +94,6 @@ func Apply(ctx context.Context, root string, r io.Reader) (int64, error) {
 			}
 		}
 
-		// Skip AUFS metadata dirs
-		if strings.HasPrefix(hdr.Name, whiteoutMetaPrefix) {
-			// Regular files inside /.wh..wh.plnk can be used as hardlink targets
-			// We don't want this directory, but we need the files in them so that
-			// such hardlinks can be resolved.
-			if strings.HasPrefix(hdr.Name, whiteoutLinkDir) && hdr.Typeflag == tar.TypeReg {
-				basename := filepath.Base(hdr.Name)
-				aufsHardlinks[basename] = hdr
-				if aufsTempdir == "" {
-					if aufsTempdir, err = ioutil.TempDir("", "dockerplnk"); err != nil {
-						return 0, err
-					}
-					defer os.RemoveAll(aufsTempdir)
-				}
-				p, err := fs.RootPath(aufsTempdir, basename)
-				if err != nil {
-					return 0, err
-				}
-				if err := createTarFile(ctx, p, root, hdr, tr); err != nil {
-					return 0, err
-				}
-			}
-
-			if hdr.Name != whiteoutOpaqueDir {
-				continue
-			}
-		}
-
-		if strings.HasPrefix(base, whiteoutPrefix) {
-			dir := filepath.Dir(path)
-			if base == whiteoutOpaqueDir {
-				_, err := os.Lstat(dir)
-				if err != nil {
-					return 0, err
-				}
-				err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-					if err != nil {
-						if os.IsNotExist(err) {
-							err = nil // parent was deleted
-						}
-						return err
-					}
-					if path == dir {
-						return nil
-					}
-					if _, exists := unpackedPaths[path]; !exists {
-						err := os.RemoveAll(path)
-						return err
-					}
-					return nil
-				})
-				if err != nil {
-					return 0, err
-				}
-				continue
-			}
-
-			originalBase := base[len(whiteoutPrefix):]
-			originalPath := filepath.Join(dir, originalBase)
-			if err := os.RemoveAll(originalPath); err != nil {
-				return 0, err
-			}
-			continue
-		}
 		// If path exits we almost always just want to remove and replace it.
 		// The only exception is when it is a directory *and* the file from
 		// the layer is also a directory. Then we want to merge them (i.e.
@@ -239,26 +108,6 @@ func Apply(ctx context.Context, root string, r io.Reader) (int64, error) {
 
 		srcData := io.Reader(tr)
 		srcHdr := hdr
-
-		// Hard links into /.wh..wh.plnk don't work, as we don't extract that directory, so
-		// we manually retarget these into the temporary files we extracted them into
-		if hdr.Typeflag == tar.TypeLink && strings.HasPrefix(filepath.Clean(hdr.Linkname), whiteoutLinkDir) {
-			linkBasename := filepath.Base(hdr.Linkname)
-			srcHdr = aufsHardlinks[linkBasename]
-			if srcHdr == nil {
-				return 0, fmt.Errorf("Invalid aufs hardlink")
-			}
-			p, err := fs.RootPath(aufsTempdir, linkBasename)
-			if err != nil {
-				return 0, err
-			}
-			tmpFile, err := os.Open(p)
-			if err != nil {
-				return 0, err
-			}
-			defer tmpFile.Close()
-			srcData = tmpFile
-		}
 
 		if err := createTarFile(ctx, path, root, srcHdr, srcData); err != nil {
 			return 0, err
@@ -283,163 +132,6 @@ func Apply(ctx context.Context, root string, r io.Reader) (int64, error) {
 	}
 
 	return size, nil
-}
-
-type changeWriter struct {
-	tw        *tar.Writer
-	source    string
-	whiteoutT time.Time
-	inodeSrc  map[uint64]string
-	inodeRefs map[uint64][]string
-}
-
-func newChangeWriter(w io.Writer, source string) *changeWriter {
-	return &changeWriter{
-		tw:        tar.NewWriter(w),
-		source:    source,
-		whiteoutT: time.Now(),
-		inodeSrc:  map[uint64]string{},
-		inodeRefs: map[uint64][]string{},
-	}
-}
-
-func (cw *changeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, err error) error {
-	if err != nil {
-		return err
-	}
-	if k == fs.ChangeKindDelete {
-		whiteOutDir := filepath.Dir(p)
-		whiteOutBase := filepath.Base(p)
-		whiteOut := filepath.Join(whiteOutDir, whiteoutPrefix+whiteOutBase)
-		hdr := &tar.Header{
-			Name:       whiteOut[1:],
-			Size:       0,
-			ModTime:    cw.whiteoutT,
-			AccessTime: cw.whiteoutT,
-			ChangeTime: cw.whiteoutT,
-		}
-		if err := cw.tw.WriteHeader(hdr); err != nil {
-			return errors.Wrap(err, "failed to write whiteout header")
-		}
-	} else {
-		var (
-			link   string
-			err    error
-			source = filepath.Join(cw.source, p)
-		)
-
-		if f.Mode()&os.ModeSymlink != 0 {
-			if link, err = os.Readlink(source); err != nil {
-				return err
-			}
-		}
-
-		hdr, err := tar.FileInfoHeader(f, link)
-		if err != nil {
-			return err
-		}
-
-		hdr.Mode = int64(chmodTarEntry(os.FileMode(hdr.Mode)))
-
-		name := p
-		if strings.HasPrefix(name, string(filepath.Separator)) {
-			name, err = filepath.Rel(string(filepath.Separator), name)
-			if err != nil {
-				return errors.Wrap(err, "failed to make path relative")
-			}
-		}
-		name, err = tarName(name)
-		if err != nil {
-			return errors.Wrap(err, "cannot canonicalize path")
-		}
-		// suffix with '/' for directories
-		if f.IsDir() && !strings.HasSuffix(name, "/") {
-			name += "/"
-		}
-		hdr.Name = name
-
-		if err := setHeaderForSpecialDevice(hdr, name, f); err != nil {
-			return errors.Wrap(err, "failed to set device headers")
-		}
-
-		// additionalLinks stores file names which must be linked to
-		// this file when this file is added
-		var additionalLinks []string
-		inode, isHardlink := fs.GetLinkInfo(f)
-		if isHardlink {
-			// If the inode has a source, always link to it
-			if source, ok := cw.inodeSrc[inode]; ok {
-				hdr.Typeflag = tar.TypeLink
-				hdr.Linkname = source
-				hdr.Size = 0
-			} else {
-				if k == fs.ChangeKindUnmodified {
-					cw.inodeRefs[inode] = append(cw.inodeRefs[inode], name)
-					return nil
-				}
-				cw.inodeSrc[inode] = name
-				additionalLinks = cw.inodeRefs[inode]
-				delete(cw.inodeRefs, inode)
-			}
-		} else if k == fs.ChangeKindUnmodified && !f.IsDir() {
-			// Nothing to write to diff
-			// Unmodified directories should still be written to keep
-			// directory permissions correct on direct unpack
-			return nil
-		}
-
-		if capability, err := getxattr(source, "security.capability"); err != nil {
-			return errors.Wrap(err, "failed to get capabilities xattr")
-		} else if capability != nil {
-			if hdr.PAXRecords == nil {
-				hdr.PAXRecords = map[string]string{}
-			}
-			hdr.PAXRecords[paxSchilyXattr+"security.capability"] = string(capability)
-		}
-
-		if err := cw.tw.WriteHeader(hdr); err != nil {
-			return errors.Wrap(err, "failed to write file header")
-		}
-
-		if hdr.Typeflag == tar.TypeReg && hdr.Size > 0 {
-			file, err := open(source)
-			if err != nil {
-				return errors.Wrapf(err, "failed to open path: %v", source)
-			}
-			defer file.Close()
-
-			buf := bufferPool.Get().(*[]byte)
-			n, err := io.CopyBuffer(cw.tw, file, *buf)
-			bufferPool.Put(buf)
-			if err != nil {
-				return errors.Wrap(err, "failed to copy")
-			}
-			if n != hdr.Size {
-				return errors.New("short write copying file")
-			}
-		}
-
-		if additionalLinks != nil {
-			source = hdr.Name
-			for _, extra := range additionalLinks {
-				hdr.Name = extra
-				hdr.Typeflag = tar.TypeLink
-				hdr.Linkname = source
-				hdr.Size = 0
-				if err := cw.tw.WriteHeader(hdr); err != nil {
-					return errors.Wrap(err, "failed to write file header")
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (cw *changeWriter) Close() error {
-	if err := cw.tw.Close(); err != nil {
-		return errors.Wrap(err, "failed to close tar writer")
-	}
-	return nil
 }
 
 func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header, reader io.Reader) error {
@@ -499,7 +191,7 @@ func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header
 		}
 
 	case tar.TypeXGlobalHeader:
-		log.G(ctx).Debug("PAX Global Extended Headers found and ignored")
+		logrus.Debug("PAX Global Extended Headers found and ignored")
 		return nil
 
 	default:
@@ -513,16 +205,13 @@ func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header
 		}
 	}
 
-	for key, value := range hdr.PAXRecords {
-		if strings.HasPrefix(key, paxSchilyXattr) {
-			key = key[len(paxSchilyXattr):]
-			if err := setxattr(path, key, value); err != nil {
-				if errors.Cause(err) == syscall.ENOTSUP {
-					log.G(ctx).WithError(err).Warnf("ignored xattr %s in archive", key)
-					continue
-				}
-				return err
+	for key, value := range hdr.Xattrs {
+		if err := setxattr(path, key, value); err != nil {
+			if errors.Cause(err) == syscall.ENOTSUP {
+				logrus.WithError(err).Warnf("ignored xattr %s in archive", key)
+				continue
 			}
+			return err
 		}
 	}
 
