@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"hash"
+	io "io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -42,6 +43,7 @@ func TestCopySimple(t *testing.T) {
 	s1, s2 := sockPairProto(ctx)
 
 	eg.Go(func() error {
+		defer s1.(*fakeConnProto).closeSend()
 		return Send(ctx, s1, d, nil, nil)
 	})
 	eg.Go(func() error {
@@ -103,6 +105,7 @@ file zzz.aa
 	s1, s2 = sockPairProto(ctx)
 
 	eg.Go(func() error {
+		defer s1.(*fakeConnProto).closeSend()
 		return Send(ctx, s1, d, nil, nil)
 	})
 	eg.Go(func() error {
@@ -227,7 +230,10 @@ func (fc *fakeConnProto) RecvMsg(m interface{}) error {
 	select {
 	case <-fc.ctx.Done():
 		return fc.ctx.Err()
-	case dt := <-fc.recvChan:
+	case dt, ok := <-fc.recvChan:
+		if !ok {
+			return io.EOF
+		}
 		return p.Unmarshal(dt)
 	}
 }
@@ -247,6 +253,10 @@ func (fc *fakeConnProto) SendMsg(m interface{}) error {
 	case fc.sendChan <- dt:
 		return nil
 	}
+}
+
+func (fc *fakeConnProto) closeSend() {
+	close(fc.sendChan)
 }
 
 type changes struct {
