@@ -91,6 +91,69 @@ func TestCopySingleFile(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCopyOverrideFile(t *testing.T) {
+	t1, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t1)
+
+	apply := fstest.Apply(
+		fstest.CreateFile("foo.txt", []byte("contents"), 0755),
+	)
+
+	require.NoError(t, apply.Apply(t1))
+
+	t2, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), filepath.Join(t2, "foo.txt"))
+	require.NoError(t, err)
+
+	err = fstest.CheckDirectoryEqual(t1, t2)
+	require.NoError(t, err)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), filepath.Join(t2, "foo.txt"))
+	require.NoError(t, err)
+
+	err = fstest.CheckDirectoryEqual(t1, t2)
+	require.NoError(t, err)
+
+	err = Copy(context.TODO(), t1+"/.", t2)
+	require.NoError(t, err)
+
+	err = fstest.CheckDirectoryEqual(t1, t2)
+	require.NoError(t, err)
+}
+
+func TestCopyDirectoryBasename(t *testing.T) {
+	t1, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t1)
+
+	apply := fstest.Apply(
+		fstest.CreateDir("foo", 0755),
+		fstest.CreateDir("foo/bar", 0755),
+		fstest.CreateFile("foo/bar/baz.txt", []byte("contents"), 0755),
+	)
+	require.NoError(t, apply.Apply(t1))
+
+	t2, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo"), filepath.Join(t2, "foo"))
+	require.NoError(t, err)
+
+	err = fstest.CheckDirectoryEqual(t1, t2)
+	require.NoError(t, err)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo"), filepath.Join(t2, "foo"))
+	require.NoError(t, err)
+
+	err = fstest.CheckDirectoryEqual(t1, t2)
+	require.NoError(t, err)
+}
+
 func TestCopyWildcards(t *testing.T) {
 	t1, err := ioutil.TempDir("", "test")
 	require.NoError(t, err)
