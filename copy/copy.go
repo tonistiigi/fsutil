@@ -26,7 +26,6 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 	for _, o := range opts {
 		o(&ci)
 	}
-
 	ensureDstPath := dst
 	if d, f := filepath.Split(dst); f != "" && f != "." {
 		ensureDstPath = d
@@ -39,6 +38,7 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 	c := newCopier(ci.Chown)
 	srcs := []string{src}
 
+	destRequiresDir := false
 	if ci.AllowWildcards {
 		d1, d2 := splitWildcards(src)
 		if d2 != "" {
@@ -47,6 +47,7 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 				return err
 			}
 			srcs = matches
+			destRequiresDir = true
 		}
 	}
 
@@ -55,13 +56,39 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 		if err != nil {
 			return err
 		}
-		srcBase := filepath.Base(src)
-		if err := c.copy(ctx, srcBase, srcFollowed, dst); err != nil {
+		dst, err := normalizedCopyInputs(srcFollowed, src, dst, destRequiresDir)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+			return err
+		}
+		if err := c.copy(ctx, srcFollowed, dst); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func normalizedCopyInputs(srcFollowed, src, destPath string, forceDir bool) (string, error) {
+	fiSrc, err := os.Lstat(srcFollowed)
+	if err != nil {
+		return "", err
+	}
+
+	fiDest, err := os.Stat(destPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return "", errors.Wrap(err, "failed to lstat destination path")
+		}
+	}
+
+	if (forceDir && fiSrc.IsDir()) || (!fiSrc.IsDir() && fiDest != nil && fiDest.IsDir()) {
+		destPath = filepath.Join(destPath, filepath.Base(src))
+	}
+
+	return destPath, nil
 }
 
 type ChownOpt struct {
@@ -94,26 +121,18 @@ func newCopier(chown *ChownOpt) *copier {
 	return &copier{inodes: map[uint64]string{}, chown: chown}
 }
 
-func (c *copier) copy(ctx context.Context, base, src, dst string) error {
+// dest is always clean
+func (c *copier) copy(ctx context.Context, src, target string) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
 	}
-	dstBase := base
 	fi, err := os.Lstat(src)
 	if err != nil {
 		return errors.Wrapf(err, "failed to stat %s", src)
 	}
 
-	if _, err := os.Lstat(dst); err != nil {
-		if !os.IsNotExist(err) {
-			return errors.Wrap(err, "failed to lstat destination directory")
-		}
-		dst, dstBase = filepath.Split(dst)
-	}
-
-	target := filepath.Join(dst, dstBase)
 	if !fi.IsDir() {
 		if err := ensureEmptyFileTarget(target); err != nil {
 			return err
@@ -189,7 +208,7 @@ func (c *copier) copyDirectory(ctx context.Context, src, dst string, stat os.Fil
 	}
 
 	for _, fi := range fis {
-		if err := c.copy(ctx, fi.Name(), filepath.Join(src, fi.Name()), filepath.Join(dst, fi.Name())); err != nil {
+		if err := c.copy(ctx, filepath.Join(src, fi.Name()), filepath.Join(dst, fi.Name())); err != nil {
 			return err
 		}
 	}
