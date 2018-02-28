@@ -16,7 +16,17 @@ import (
 	"golang.org/x/net/context"
 )
 
+// RequiresRoot skips tests that require root
+func RequiresRoot(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skip("skipping test that requires root")
+		return
+	}
+}
+
 func TestWriterSimple(t *testing.T) {
+	RequiresRoot(t)
+
 	changes := changeStream([]string{
 		"ADD bar dir",
 		"ADD bar/foo file",
