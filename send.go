@@ -56,36 +56,16 @@ func (s *sender) run(ctx context.Context) error {
 
 	defer s.updateProgress(0, true)
 
-	var sendPipelineClosed bool
-	var walkErr error
-
 	g.Go(func() error {
 		err := s.walk(ctx)
 		if err != nil {
-			s.mu.Lock()
-			if !sendPipelineClosed {
-				close(s.sendpipeline)
-				sendPipelineClosed = true
-			}
-			walkErr = err
-			s.mu.Unlock()
+			s.conn.SendMsg(&Packet{Type: PACKET_ERR, Data: []byte(err.Error())})
 		}
 		return err
 	})
 
 	for i := 0; i < 4; i++ {
-		g.Go(func() (err error) {
-			defer func() {
-				if err != nil {
-					// If s.walk returned an error, err does not contain that error
-					// but is instead a context cancellation error.
-					// So if available, walkErr is more desirable to be returned to the client.
-					if walkErr != nil {
-						err = walkErr
-					}
-					s.conn.SendMsg(&Packet{Type: PACKET_ERR, Data: []byte(err.Error())})
-				}
-			}()
+		g.Go(func() error {
 			for h := range s.sendpipeline {
 				select {
 				case <-ctx.Done():
@@ -96,24 +76,12 @@ func (s *sender) run(ctx context.Context) error {
 					return err
 				}
 			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
 			return nil
 		})
 	}
 
 	g.Go(func() error {
-		defer func() {
-			s.mu.Lock()
-			if !sendPipelineClosed {
-				close(s.sendpipeline)
-				sendPipelineClosed = true
-			}
-			s.mu.Unlock()
-		}()
+		defer close(s.sendpipeline)
 
 		for {
 			select {
