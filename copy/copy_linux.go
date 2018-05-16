@@ -2,6 +2,7 @@ package fs
 
 import (
 	"io"
+	"math"
 	"os"
 	"syscall"
 
@@ -41,22 +42,33 @@ func copyFileContent(dst, src *os.File) error {
 		return errors.Wrap(err, "unable to stat source")
 	}
 
-	n, err := unix.CopyFileRange(int(src.Fd()), nil, int(dst.Fd()), nil, int(st.Size()), 0)
-	if err != nil {
-		if err != unix.ENOSYS && err != unix.EXDEV {
-			return errors.Wrap(err, "copy file range failed")
+	var written int64
+	size := st.Size()
+	first := true
+
+	for written < size {
+		var desired int
+		if size-written > math.MaxInt32 {
+			desired = int(math.MaxInt32)
+		} else {
+			desired = int(size - written)
 		}
 
-		buf := bufferPool.Get().(*[]byte)
-		_, err = io.CopyBuffer(dst, src, *buf)
-		bufferPool.Put(buf)
-		return err
-	}
+		n, err := unix.CopyFileRange(int(src.Fd()), nil, int(dst.Fd()), nil, desired, 0)
+		if err != nil {
+			if (err != unix.ENOSYS && err != unix.EXDEV) || !first {
+				return errors.Wrap(err, "copy file range failed")
+			}
 
-	if int64(n) != st.Size() {
-		return errors.Wrapf(err, "short copy: %d of %d", int64(n), st.Size())
-	}
+			buf := bufferPool.Get().(*[]byte)
+			_, err = io.CopyBuffer(dst, src, *buf)
+			bufferPool.Put(buf)
+			return errors.Wrap(err, "userspace copy failed")
+		}
 
+		first = false
+		written += int64(n)
+	}
 	return nil
 }
 

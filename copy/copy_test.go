@@ -9,7 +9,7 @@ import (
 
 	_ "crypto/sha256"
 
-	"github.com/containerd/containerd/fs/fstest"
+	"github.com/containerd/continuity/fs/fstest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
