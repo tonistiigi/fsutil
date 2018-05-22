@@ -30,8 +30,10 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 	if d, f := filepath.Split(dst); f != "" && f != "." {
 		ensureDstPath = d
 	}
-	if err := os.MkdirAll(ensureDstPath, 0700); err != nil {
-		return err
+	if ensureDstPath != "" {
+		if err := os.MkdirAll(ensureDstPath, 0700); err != nil {
+			return err
+		}
 	}
 	dst = filepath.Clean(dst)
 
