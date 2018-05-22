@@ -49,6 +49,33 @@ func TestCopyDirectoryWithLocalSymlink(t *testing.T) {
 	}
 }
 
+func TestCopyToWorkDir(t *testing.T) {
+	t1, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t1)
+
+	apply := fstest.Apply(
+		fstest.CreateFile("foo.txt", []byte("contents"), 0755),
+	)
+
+	require.NoError(t, apply.Apply(t1))
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
+	t2, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+	defer os.Chdir(wd)
+	os.Chdir(t2)
+
+	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), "foo.txt")
+	require.NoError(t, err)
+
+	err = fstest.CheckDirectoryEqual(t1, t2)
+	require.NoError(t, err)
+}
+
 func TestCopySingleFile(t *testing.T) {
 	t1, err := ioutil.TempDir("", "test")
 	require.NoError(t, err)
