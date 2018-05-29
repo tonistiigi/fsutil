@@ -65,7 +65,7 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
 			return err
 		}
-		if err := c.copy(ctx, srcFollowed, dst); err != nil {
+		if err := c.copy(ctx, srcFollowed, dst, false); err != nil {
 			return err
 		}
 	}
@@ -124,7 +124,7 @@ func newCopier(chown *ChownOpt) *copier {
 }
 
 // dest is always clean
-func (c *copier) copy(ctx context.Context, src, target string) error {
+func (c *copier) copy(ctx context.Context, src, target string, copyTargetFileInfo bool) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -141,10 +141,14 @@ func (c *copier) copy(ctx context.Context, src, target string) error {
 		}
 	}
 
+	copyFileInfo := true
+
 	switch {
 	case fi.IsDir():
-		if err := c.copyDirectory(ctx, src, target, fi); err != nil {
+		if created, err := c.copyDirectory(ctx, src, target, fi); err != nil {
 			return err
+		} else if !copyTargetFileInfo {
+			copyFileInfo = created
 		}
 	case (fi.Mode() & os.ModeType) == 0:
 		link, err := getLinkSource(target, fi, c.inodes)
@@ -174,48 +178,54 @@ func (c *copier) copy(ctx context.Context, src, target string) error {
 		// TODO: Support pipes and sockets
 		return errors.Wrapf(err, "unsupported mode %s", fi.Mode())
 	}
-	if err := c.copyFileInfo(fi, target); err != nil {
-		return errors.Wrap(err, "failed to copy file info")
-	}
 
-	if err := copyXAttrs(target, src); err != nil {
-		return errors.Wrap(err, "failed to copy xattrs")
+	if copyFileInfo {
+		if err := c.copyFileInfo(fi, target); err != nil {
+			return errors.Wrap(err, "failed to copy file info")
+		}
+
+		if err := copyXAttrs(target, src); err != nil {
+			return errors.Wrap(err, "failed to copy xattrs")
+		}
 	}
 	return nil
 }
 
-func (c *copier) copyDirectory(ctx context.Context, src, dst string, stat os.FileInfo) error {
+func (c *copier) copyDirectory(ctx context.Context, src, dst string, stat os.FileInfo) (bool, error) {
 	if !stat.IsDir() {
-		return errors.Errorf("source is not directory")
+		return false, errors.Errorf("source is not directory")
 	}
+
+	created := false
 
 	if st, err := os.Lstat(dst); err != nil {
 		if !os.IsNotExist(err) {
-			return err
+			return false, err
 		}
+		created = true
 		if err := os.Mkdir(dst, stat.Mode()); err != nil {
-			return errors.Wrapf(err, "failed to mkdir %s", dst)
+			return created, errors.Wrapf(err, "failed to mkdir %s", dst)
 		}
 	} else if !st.IsDir() {
-		return errors.Errorf("cannot copy to non-directory: %s", dst)
+		return false, errors.Errorf("cannot copy to non-directory: %s", dst)
 	} else {
 		if err := os.Chmod(dst, stat.Mode()); err != nil {
-			return errors.Wrapf(err, "failed to chmod on %s", dst)
+			return false, errors.Wrapf(err, "failed to chmod on %s", dst)
 		}
 	}
 
 	fis, err := ioutil.ReadDir(src)
 	if err != nil {
-		return errors.Wrapf(err, "failed to read %s", src)
+		return false, errors.Wrapf(err, "failed to read %s", src)
 	}
 
 	for _, fi := range fis {
-		if err := c.copy(ctx, filepath.Join(src, fi.Name()), filepath.Join(dst, fi.Name())); err != nil {
-			return err
+		if err := c.copy(ctx, filepath.Join(src, fi.Name()), filepath.Join(dst, fi.Name()), true); err != nil {
+			return false, err
 		}
 	}
 
-	return nil
+	return created, nil
 }
 
 func ensureEmptyFileTarget(dst string) error {
