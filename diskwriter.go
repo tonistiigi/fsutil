@@ -80,9 +80,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		}
 	}()
 
-	p = filepath.FromSlash(p)
-
-	destPath := filepath.Join(dw.dest, p)
+	destPath := filepath.Join(dw.dest, filepath.FromSlash(p))
 
 	if kind == ChangeKindDelete {
 		// todo: no need to validate if diff is trusted but is it always?

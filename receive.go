@@ -3,7 +3,6 @@ package fsutil
 import (
 	"io"
 	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -170,7 +169,7 @@ func (r *receiver) run(ctx context.Context) error {
 				}
 				if fileCanRequestData(os.FileMode(p.Stat.Mode)) {
 					r.mu.Lock()
-					r.files[filepath.FromSlash(p.Stat.Path)] = i
+					r.files[p.Stat.Path] = i
 					r.mu.Unlock()
 				}
 				i++
