@@ -1,12 +1,12 @@
 package util
 
 import (
+	"context"
 	"encoding/binary"
 	"io"
 	"sync"
 
 	"github.com/tonistiigi/fsutil"
-	"golang.org/x/net/context"
 )
 
 var bufPool = sync.Pool{

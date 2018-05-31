@@ -2,6 +2,7 @@ package fsutil
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"io/ioutil"
 	"os"
@@ -14,7 +15,6 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/net/context"
 )
 
 // RequiresRoot skips tests that require root
