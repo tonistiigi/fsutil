@@ -1,9 +1,10 @@
 package bench
 
 import (
+	"context"
+
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
-	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
 )
 

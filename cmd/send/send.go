@@ -1,12 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
 	"github.com/tonistiigi/fsutil"
 	"github.com/tonistiigi/fsutil/util"
-	"golang.org/x/net/context"
 )
 
 func main() {
