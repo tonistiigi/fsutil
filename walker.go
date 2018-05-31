@@ -131,13 +131,13 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		stat := &Stat{
 			Path:    path,
 			Mode:    uint32(fi.Mode()),
-			Size_:   fi.Size(),
 			ModTime: fi.ModTime().UnixNano(),
 		}
 
 		setUnixOpt(fi, stat, path, seenFiles)
 
 		if !fi.IsDir() {
+			stat.Size_ = fi.Size()
 			if fi.Mode()&os.ModeSymlink != 0 {
 				link, err := os.Readlink(origpath)
 				if err != nil {
