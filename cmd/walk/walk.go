@@ -16,7 +16,7 @@ func main() {
 		panic("source path not set")
 	}
 
-	excludes := []string{}
+	var excludes []string
 
 	if len(flag.Args()) > 1 {
 		dt, err := ioutil.ReadFile(flag.Args()[1])
