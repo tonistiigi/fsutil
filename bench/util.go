@@ -6,12 +6,11 @@ import (
 	"errors"
 	"io/ioutil"
 	"math"
+	mathrand "math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
 	"sync"
-
-	mathrand "math/rand"
 )
 
 func createTestDir(n int) (string, error) {

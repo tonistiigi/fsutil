@@ -2,12 +2,11 @@ package fs
 
 import (
 	"context"
+	_ "crypto/sha256"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
-
-	_ "crypto/sha256"
 
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/pkg/errors"
