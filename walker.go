@@ -15,7 +15,10 @@ import (
 type WalkOpt struct {
 	IncludePatterns []string
 	ExcludePatterns []string
-	Map             func(*Stat) bool
+	// FollowPaths contains symlinks that are resolved into include patterns
+	// before performing the fs walk
+	FollowPaths []string
+	Map         func(*Stat) bool
 }
 
 func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) error {
@@ -39,8 +42,25 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 	}
 
-	var lastIncludedDir string
 	var includePatterns []string
+	if opt != nil && opt.IncludePatterns != nil {
+		includePatterns = make([]string, len(opt.IncludePatterns))
+		for k := range opt.IncludePatterns {
+			includePatterns[k] = filepath.Clean(opt.IncludePatterns[k])
+		}
+	}
+	if opt != nil && opt.FollowPaths != nil {
+		targets, err := FollowLinks(p, opt.FollowPaths)
+		if err != nil {
+			return err
+		}
+		if targets != nil {
+			includePatterns = append(includePatterns, targets...)
+			includePatterns = dedupePaths(includePatterns)
+		}
+	}
+
+	var lastIncludedDir string
 
 	seenFiles := make(map[uint64]string)
 	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) (retErr error) {
@@ -66,13 +86,7 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 
 		if opt != nil {
-			if opt.IncludePatterns != nil {
-				if includePatterns == nil {
-					includePatterns = make([]string, len(opt.IncludePatterns))
-					for k := range opt.IncludePatterns {
-						includePatterns[k] = filepath.Clean(opt.IncludePatterns[k])
-					}
-				}
+			if includePatterns != nil {
 				skip := false
 				if lastIncludedDir != "" {
 					if strings.HasPrefix(path, lastIncludedDir+string(filepath.Separator)) {
