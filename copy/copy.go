@@ -124,7 +124,7 @@ func newCopier(chown *ChownOpt) *copier {
 }
 
 // dest is always clean
-func (c *copier) copy(ctx context.Context, src, target string, copyTargetFileInfo bool) error {
+func (c *copier) copy(ctx context.Context, src, target string, overwriteTargetMetadata bool) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -145,9 +145,9 @@ func (c *copier) copy(ctx context.Context, src, target string, copyTargetFileInf
 
 	switch {
 	case fi.IsDir():
-		if created, err := c.copyDirectory(ctx, src, target, fi); err != nil {
+		if created, err := c.copyDirectory(ctx, src, target, fi, overwriteTargetMetadata); err != nil {
 			return err
-		} else if !copyTargetFileInfo {
+		} else if !overwriteTargetMetadata {
 			copyFileInfo = created
 		}
 	case (fi.Mode() & os.ModeType) == 0:
@@ -191,7 +191,7 @@ func (c *copier) copy(ctx context.Context, src, target string, copyTargetFileInf
 	return nil
 }
 
-func (c *copier) copyDirectory(ctx context.Context, src, dst string, stat os.FileInfo) (bool, error) {
+func (c *copier) copyDirectory(ctx context.Context, src, dst string, stat os.FileInfo, overwriteTargetMetadata bool) (bool, error) {
 	if !stat.IsDir() {
 		return false, errors.Errorf("source is not directory")
 	}
@@ -208,7 +208,7 @@ func (c *copier) copyDirectory(ctx context.Context, src, dst string, stat os.Fil
 		}
 	} else if !st.IsDir() {
 		return false, errors.Errorf("cannot copy to non-directory: %s", dst)
-	} else {
+	} else if overwriteTargetMetadata {
 		if err := os.Chmod(dst, stat.Mode()); err != nil {
 			return false, errors.Wrapf(err, "failed to chmod on %s", dst)
 		}
