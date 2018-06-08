@@ -12,9 +12,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func (c *copier) copyFileInfo(fi os.FileInfo, name string) error {
+func getUidGid(fi os.FileInfo) (uid, gid int) {
 	st := fi.Sys().(*syscall.Stat_t)
-	uid, gid := int(st.Uid), int(st.Gid)
+	return int(st.Uid), int(st.Gid)
+}
+
+func (c *copier) copyFileInfo(fi os.FileInfo, name string) error {
+	uid, gid := getUidGid(fi)
+	st := fi.Sys().(*syscall.Stat_t)
 	if c.chown != nil {
 		uid, gid = c.chown.Uid, c.chown.Gid
 	}

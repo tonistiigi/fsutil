@@ -222,6 +222,63 @@ func TestCopyWildcards(t *testing.T) {
 	require.Equal(t, "bar-contents", string(dt))
 }
 
+func TestCopyExistingDirDest(t *testing.T) {
+	t1, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t1)
+
+	apply := fstest.Apply(
+		fstest.CreateDir("dir", 0755),
+		fstest.CreateFile("dir/foo.txt", []byte("foo-contents"), 0644),
+		fstest.CreateFile("dir/bar.txt", []byte("bar-contents"), 0644),
+	)
+	require.NoError(t, apply.Apply(t1))
+
+	t2, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	apply = fstest.Apply(
+		// notice how perms for destination and source are different
+		fstest.CreateDir("dir", 0700),
+		// dir/foo.txt does not exist, but dir/bar.txt does
+		// notice how both perms and contents for destination and source are different
+		fstest.CreateFile("dir/bar.txt", []byte("old-bar-contents"), 0600),
+	)
+	require.NoError(t, apply.Apply(t2))
+
+	for _, x := range []string {"dir", "dir/bar.txt"} {
+		err = os.Chown(filepath.Join(t2, x), 1, 1)
+		require.NoErrorf(t, err, "x=%s", x)
+	}
+
+	err = Copy(context.TODO(), filepath.Join(t1, "dir"), filepath.Join(t2, "dir"))
+	require.NoError(t, err)
+
+	// verify that existing destination dir's metadata was not overwritten
+	st, err := os.Lstat(filepath.Join(t2, "dir"))
+	require.NoError(t, err)
+	require.Equal(t, st.Mode() & os.ModePerm, os.FileMode(0700))
+	uid, gid := getUidGid(st)
+	require.Equal(t, 1, uid)
+	require.Equal(t, 1, gid)
+
+	// verify that non-existing file was created
+	_, err = os.Lstat(filepath.Join(t2, "dir/foo.txt"))
+	require.NoError(t, err)
+
+	// verify that existing file's content and metadata was overwritten
+	st, err = os.Lstat(filepath.Join(t2, "dir/bar.txt"))
+	require.NoError(t, err)
+	require.Equal(t, st.Mode() & os.ModePerm, os.FileMode(0644))
+	uid, gid = getUidGid(st)
+	require.Equal(t, 0, uid)
+	require.Equal(t, 0, gid)
+	dt, err := ioutil.ReadFile(filepath.Join(t2, "dir/bar.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "bar-contents", string(dt))
+}
+
 func testCopy(apply fstest.Applier) error {
 	t1, err := ioutil.TempDir("", "test-copy-src-")
 	if err != nil {
