@@ -38,7 +38,7 @@ func TestInvalidExcludePatterns(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, d, &WalkOpt{ExcludePatterns: []string{"!"}}, nil)
+		return Send(ctx, s1, NewFS(d, &WalkOpt{ExcludePatterns: []string{"!"}}), nil)
 	})
 	eg.Go(func() error {
 		return Receive(ctx, s2, dest, ReceiveOpt{
@@ -85,13 +85,13 @@ func TestCopySimple(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, d, &WalkOpt{
+		return Send(ctx, s1, NewFS(d, &WalkOpt{
 			Map: func(s *Stat) bool {
 				s.Uid = 0
 				s.Gid = 0
 				return true
 			},
-		}, nil)
+		}), nil)
 	})
 	eg.Go(func() error {
 		return Receive(ctx, s2, dest, ReceiveOpt{
@@ -158,13 +158,13 @@ file zzz.aa
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, d, &WalkOpt{
+		return Send(ctx, s1, NewFS(d, &WalkOpt{
 			Map: func(s *Stat) bool {
 				s.Uid = 0
 				s.Gid = 0
 				return true
 			},
-		}, nil)
+		}), nil)
 	})
 	eg.Go(func() error {
 		return Receive(ctx, s2, dest, ReceiveOpt{

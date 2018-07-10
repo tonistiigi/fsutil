@@ -20,7 +20,7 @@ func diffCopy(proto bool, src, dest string) error {
 	}
 
 	eg.Go(func() error {
-		return fsutil.Send(ctx, s1, src, nil, nil)
+		return fsutil.Send(ctx, s1, fsutil.NewFS(src, nil), nil)
 	})
 	eg.Go(func() error {
 		return fsutil.Receive(ctx, s2, dest, fsutil.ReceiveOpt{})
