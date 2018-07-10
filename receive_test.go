@@ -59,6 +59,37 @@ func TestInvalidExcludePatterns(t *testing.T) {
 	}
 }
 
+func TestCopyWithSubDir(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/bar file data1",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	dest, err := ioutil.TempDir("", "dest")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dest)
+
+	eg, ctx := errgroup.WithContext(context.Background())
+	s1, s2 := sockPairProto(ctx)
+
+	eg.Go(func() error {
+		defer s1.(*fakeConnProto).closeSend()
+		return Send(ctx, s1, SubDirFS(NewFS(d, &WalkOpt{}), Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}), nil)
+	})
+	eg.Go(func() error {
+		return Receive(ctx, s2, dest, ReceiveOpt{})
+	})
+
+	err = eg.Wait()
+	assert.NoError(t, err)
+
+	dt, err := ioutil.ReadFile(filepath.Join(dest, "sub/foo/bar"))
+	assert.NoError(t, err)
+	assert.Equal(t, "data1", string(dt))
+}
+
 func TestCopySimple(t *testing.T) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo file data1",
