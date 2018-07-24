@@ -16,6 +16,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -88,6 +89,72 @@ func TestCopyWithSubDir(t *testing.T) {
 	dt, err := ioutil.ReadFile(filepath.Join(dest, "sub/foo/bar"))
 	assert.NoError(t, err)
 	assert.Equal(t, "data1", string(dt))
+}
+
+func TestCopySwitchDirToFile(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo file data1",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	dest, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/bar dile data2",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	copy := func(src, dest string) (*changes, error) {
+		ts := newNotificationBuffer()
+		chs := &changes{fn: ts.HandleChange}
+
+		eg, ctx := errgroup.WithContext(context.Background())
+		s1, s2 := sockPairProto(ctx)
+
+		eg.Go(func() error {
+			defer s1.(*fakeConnProto).closeSend()
+			return Send(ctx, s1, NewFS(src, &WalkOpt{
+				Map: func(s *Stat) bool {
+					s.Uid = 0
+					s.Gid = 0
+					return true
+				},
+			}), nil)
+		})
+		eg.Go(func() error {
+			return Receive(ctx, s2, dest, ReceiveOpt{
+				NotifyHashed:  chs.HandleChange,
+				ContentHasher: simpleSHA256Hasher,
+				Filter: func(s *Stat) bool {
+					s.Uid = uint32(os.Getuid())
+					s.Gid = uint32(os.Getgid())
+					return true
+				},
+			})
+		})
+
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+
+		return chs, nil
+	}
+
+	chs, err := copy(d, dest)
+	require.NoError(t, err)
+
+	k, ok := chs.c["foo"]
+	require.True(t, ok)
+	require.Equal(t, k, ChangeKindAdd)
+	require.Equal(t, len(chs.c), 1)
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), dest, nil, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, string(b.Bytes()), `file foo
+`)
 }
 
 func TestCopySimple(t *testing.T) {
