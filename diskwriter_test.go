@@ -64,6 +64,71 @@ file foo2 >foo
 
 }
 
+func TestWriterFileToDir(t *testing.T) {
+	requiresRoot(t)
+
+	changes := changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/bar file data2",
+	})
+
+	dest, err := tmpDir(changeStream([]string{
+		"ADD foo file data1",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(dest)
+
+	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
+		SyncDataCb: noOpWriteTo,
+	})
+	assert.NoError(t, err)
+
+	for _, c := range changes {
+		err := dw.HandleChange(c.kind, c.path, c.fi, nil)
+		assert.NoError(t, err)
+	}
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), dest, nil, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, string(b.Bytes()), `dir foo
+file foo/bar
+`)
+}
+
+func TestWriterDirToFile(t *testing.T) {
+	requiresRoot(t)
+
+	changes := changeStream([]string{
+		"ADD foo file data1",
+	})
+
+	dest, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/bar file data2",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(dest)
+
+	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
+		SyncDataCb: noOpWriteTo,
+	})
+	assert.NoError(t, err)
+
+	for _, c := range changes {
+		err := dw.HandleChange(c.kind, c.path, c.fi, nil)
+		assert.NoError(t, err)
+	}
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), dest, nil, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, string(b.Bytes()), `file foo
+`)
+}
+
 func TestWalkerWriterSimple(t *testing.T) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD bar dir",
