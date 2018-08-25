@@ -31,7 +31,7 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 		ensureDstPath = d
 	}
 	if ensureDstPath != "" {
-		if err := os.MkdirAll(ensureDstPath, 0700); err != nil {
+		if err := os.MkdirAll(ensureDstPath, 0755); err != nil {
 			return err
 		}
 	}
@@ -62,7 +62,7 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 			return err
 		}
 		if err := c.copy(ctx, srcFollowed, dst, false); err != nil {
