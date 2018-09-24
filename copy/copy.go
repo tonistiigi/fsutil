@@ -31,7 +31,7 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 		ensureDstPath = d
 	}
 	if ensureDstPath != "" {
-		if err := os.MkdirAll(ensureDstPath, 0755); err != nil {
+		if err := mkdirp(ensureDstPath, ci); err != nil {
 			return err
 		}
 	}
@@ -62,7 +62,7 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		if err := mkdirp(filepath.Dir(dst), ci); err != nil {
 			return err
 		}
 		if err := c.copy(ctx, srcFollowed, dst, false); err != nil {
@@ -336,4 +336,16 @@ func rel(basepath, targpath string) (string, error) {
 		}
 	}
 	return filepath.Rel(basepath, targpath)
+}
+
+func mkdirp(p string, ci CopyInfo) error {
+	if err := os.MkdirAll(p, 0755); err != nil {
+		return err
+	}
+	if chown := ci.Chown; chown != nil {
+		if err := os.Lchown(p, chown.Uid, chown.Gid); err != nil {
+			return errors.Wrapf(err, "failed to chown %s", p)
+		}
+	}
+	return nil
 }
