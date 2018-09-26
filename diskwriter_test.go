@@ -277,7 +277,7 @@ func (nb *notificationBuffer) HandleChange(kind ChangeKind, p string, fi os.File
 	} else {
 		h, ok := fi.(hashed)
 		if !ok {
-			return errors.Errorf("invalid FileInfo: %p", p)
+			return errors.Errorf("invalid FileInfo: %s", p)
 		}
 		nb.items[p] = h.Digest()
 	}
