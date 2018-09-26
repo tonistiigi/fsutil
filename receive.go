@@ -188,7 +188,7 @@ func (r *receiver) run(ctx context.Context) error {
 				pw, ok := r.pipes[p.ID]
 				r.muPipes.Unlock()
 				if !ok {
-					return errors.Errorf("invalid file request %s", p.ID)
+					return errors.Errorf("invalid file request %d", p.ID)
 				}
 				if len(p.Data) == 0 {
 					if err := pw.Close(); err != nil {
