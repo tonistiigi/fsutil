@@ -61,7 +61,7 @@ func copyFileContent(dst, src *os.File) error {
 
 		n, err := unix.CopyFileRange(int(src.Fd()), nil, int(dst.Fd()), nil, desired, 0)
 		if err != nil {
-			if (err != unix.ENOSYS && err != unix.EXDEV) || !first {
+			if (err != unix.ENOSYS && err != unix.EXDEV && err != unix.EPERM) || !first {
 				return errors.Wrap(err, "copy file range failed")
 			}
 
