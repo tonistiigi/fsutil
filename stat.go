@@ -51,3 +51,11 @@ func mkstat(path, relpath string, fi os.FileInfo, inodemap map[uint64]string) (*
 
 	return stat, nil
 }
+
+func Stat(path string) (*types.Stat, error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return nil, errors.Wrap(err, "os stat")
+	}
+	return mkstat(path, filepath.Base(path), fi, nil)
+}

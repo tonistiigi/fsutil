@@ -46,13 +46,15 @@ func setUnixOpt(fi os.FileInfo, stat *types.Stat, path string, seenFiles map[uin
 		}
 
 		ino := s.Ino
-		if s.Nlink > 1 {
-			if oldpath, ok := seenFiles[ino]; ok {
-				stat.Linkname = oldpath
-				stat.Size_ = 0
+		if seenFiles != nil {
+			if s.Nlink > 1 {
+				if oldpath, ok := seenFiles[ino]; ok {
+					stat.Linkname = oldpath
+					stat.Size_ = 0
+				}
 			}
+			seenFiles[ino] = path
 		}
-		seenFiles[ino] = path
 	}
 }
 
