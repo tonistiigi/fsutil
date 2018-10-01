@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tonistiigi/fsutil/types"
 )
 
 func TestValidatorSimpleFiles(t *testing.T) {
@@ -210,7 +211,7 @@ func parseChange(str string) *change {
 		panic(errStr)
 	}
 	c.path = f[1]
-	st := &Stat{}
+	st := &types.Stat{}
 	switch f[2] {
 	case "file":
 		if len(f) > 3 {

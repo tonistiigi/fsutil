@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/pkg/errors"
+	"github.com/tonistiigi/fsutil/types"
 )
 
 type WalkOpt struct {
@@ -18,7 +19,7 @@ type WalkOpt struct {
 	// FollowPaths contains symlinks that are resolved into include patterns
 	// before performing the fs walk
 	FollowPaths []string
-	Map         func(*Stat) bool
+	Map         func(*types.Stat) bool
 }
 
 func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) error {
@@ -148,7 +149,7 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 	passedFilter:
 		path = filepath.ToSlash(path)
 
-		stat := &Stat{
+		stat := &types.Stat{
 			Path:    path,
 			Mode:    uint32(fi.Mode()),
 			ModTime: fi.ModTime().UnixNano(),
@@ -197,7 +198,7 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 }
 
 type StatInfo struct {
-	*Stat
+	*types.Stat
 }
 
 func (s *StatInfo) Name() string {

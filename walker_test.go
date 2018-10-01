@@ -12,6 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/tonistiigi/fsutil/types"
 )
 
 func TestWalkerSimple(t *testing.T) {
@@ -216,7 +217,7 @@ func TestWalkerMap(t *testing.T) {
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
 	err = Walk(context.Background(), d, &WalkOpt{
-		Map: func(s *Stat) bool {
+		Map: func(s *types.Stat) bool {
 			if strings.HasPrefix(s.Path, "foo") {
 				s.Path = "_" + s.Path
 				return true
@@ -282,7 +283,7 @@ func TestMatchPrefix(t *testing.T) {
 
 func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
 	return func(path string, fi os.FileInfo, err error) error {
-		stat, ok := fi.Sys().(*Stat)
+		stat, ok := fi.Sys().(*types.Stat)
 		if !ok {
 			return errors.Errorf("invalid symlink %s", path)
 		}
@@ -315,7 +316,7 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 	for _, c := range inp {
 		if c.kind == ChangeKindAdd {
 			p := filepath.Join(tmpdir, c.path)
-			stat, ok := c.fi.Sys().(*Stat)
+			stat, ok := c.fi.Sys().(*types.Stat)
 			if !ok {
 				return "", errors.Errorf("invalid symlink change %s", p)
 			}

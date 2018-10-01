@@ -8,9 +8,10 @@ import (
 
 	"github.com/containerd/continuity/sysx"
 	"github.com/pkg/errors"
+	"github.com/tonistiigi/fsutil/types"
 )
 
-func loadXattr(origpath string, stat *Stat) error {
+func loadXattr(origpath string, stat *types.Stat) error {
 	xattrs, err := sysx.LListxattr(origpath)
 	if err != nil {
 		if errors.Cause(err) == syscall.ENOTSUP {
@@ -31,7 +32,7 @@ func loadXattr(origpath string, stat *Stat) error {
 	return nil
 }
 
-func setUnixOpt(fi os.FileInfo, stat *Stat, path string, seenFiles map[uint64]string) {
+func setUnixOpt(fi os.FileInfo, stat *types.Stat, path string, seenFiles map[uint64]string) {
 	s := fi.Sys().(*syscall.Stat_t)
 
 	stat.Uid = s.Uid
