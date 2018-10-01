@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -77,7 +78,7 @@ func TestCopyWithSubDir(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, SubDirFS(NewFS(d, &WalkOpt{}), Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}), nil)
+		return Send(ctx, s1, SubDirFS(NewFS(d, &WalkOpt{}), types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}), nil)
 	})
 	eg.Go(func() error {
 		return Receive(ctx, s2, dest, ReceiveOpt{})
@@ -115,7 +116,7 @@ func TestCopySwitchDirToFile(t *testing.T) {
 		eg.Go(func() error {
 			defer s1.(*fakeConnProto).closeSend()
 			return Send(ctx, s1, NewFS(src, &WalkOpt{
-				Map: func(s *Stat) bool {
+				Map: func(s *types.Stat) bool {
 					s.Uid = 0
 					s.Gid = 0
 					return true
@@ -126,7 +127,7 @@ func TestCopySwitchDirToFile(t *testing.T) {
 			return Receive(ctx, s2, dest, ReceiveOpt{
 				NotifyHashed:  chs.HandleChange,
 				ContentHasher: simpleSHA256Hasher,
-				Filter: func(s *Stat) bool {
+				Filter: func(s *types.Stat) bool {
 					s.Uid = uint32(os.Getuid())
 					s.Gid = uint32(os.Getgid())
 					return true
@@ -184,7 +185,7 @@ func TestCopySimple(t *testing.T) {
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
 		return Send(ctx, s1, NewFS(d, &WalkOpt{
-			Map: func(s *Stat) bool {
+			Map: func(s *types.Stat) bool {
 				s.Uid = 0
 				s.Gid = 0
 				return true
@@ -195,7 +196,7 @@ func TestCopySimple(t *testing.T) {
 		return Receive(ctx, s2, dest, ReceiveOpt{
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
-			Filter: func(s *Stat) bool {
+			Filter: func(s *types.Stat) bool {
 				s.Uid = uint32(os.Getuid())
 				s.Gid = uint32(os.Getgid())
 				return true
@@ -257,7 +258,7 @@ file zzz.aa
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
 		return Send(ctx, s1, NewFS(d, &WalkOpt{
-			Map: func(s *Stat) bool {
+			Map: func(s *types.Stat) bool {
 				s.Uid = 0
 				s.Gid = 0
 				return true
@@ -268,7 +269,7 @@ file zzz.aa
 		return Receive(ctx, s2, dest, ReceiveOpt{
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
-			Filter: func(s *Stat) bool {
+			Filter: func(s *types.Stat) bool {
 				s.Uid = uint32(os.Getuid())
 				s.Gid = uint32(os.Getgid())
 				return true
@@ -323,8 +324,8 @@ file zzz.aa
 }
 
 func sockPair(ctx context.Context) (Stream, Stream) {
-	c1 := make(chan *Packet, 32)
-	c2 := make(chan *Packet, 32)
+	c1 := make(chan *types.Packet, 32)
+	c2 := make(chan *types.Packet, 32)
 	return &fakeConn{ctx, c1, c2}, &fakeConn{ctx, c2, c1}
 }
 
@@ -336,8 +337,8 @@ func sockPairProto(ctx context.Context) (Stream, Stream) {
 
 type fakeConn struct {
 	ctx      context.Context
-	recvChan chan *Packet
-	sendChan chan *Packet
+	recvChan chan *types.Packet
+	sendChan chan *types.Packet
 }
 
 func (fc *fakeConn) Context() context.Context {
@@ -345,7 +346,7 @@ func (fc *fakeConn) Context() context.Context {
 }
 
 func (fc *fakeConn) RecvMsg(m interface{}) error {
-	p, ok := m.(*Packet)
+	p, ok := m.(*types.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
@@ -359,7 +360,7 @@ func (fc *fakeConn) RecvMsg(m interface{}) error {
 }
 
 func (fc *fakeConn) SendMsg(m interface{}) error {
-	p, ok := m.(*Packet)
+	p, ok := m.(*types.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
@@ -384,7 +385,7 @@ func (fc *fakeConnProto) Context() context.Context {
 }
 
 func (fc *fakeConnProto) RecvMsg(m interface{}) error {
-	p, ok := m.(*Packet)
+	p, ok := m.(*types.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
@@ -400,7 +401,7 @@ func (fc *fakeConnProto) RecvMsg(m interface{}) error {
 }
 
 func (fc *fakeConnProto) SendMsg(m interface{}) error {
-	p, ok := m.(*Packet)
+	p, ok := m.(*types.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
@@ -436,7 +437,7 @@ func (c *changes) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err er
 	return c.fn(kind, p, fi, err)
 }
 
-func simpleSHA256Hasher(s *Stat) (hash.Hash, error) {
+func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 	h := sha256.New()
 	ss := *s
 	ss.ModTime = 0

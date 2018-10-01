@@ -5,6 +5,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
+	fstypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -37,8 +38,8 @@ func diffCopyReg(src, dest string) error {
 }
 
 func sockPair(ctx context.Context) (fsutil.Stream, fsutil.Stream) {
-	c1 := make(chan *fsutil.Packet, 64)
-	c2 := make(chan *fsutil.Packet, 64)
+	c1 := make(chan *fstypes.Packet, 64)
+	c2 := make(chan *fstypes.Packet, 64)
 	return &fakeConn{ctx, c1, c2}, &fakeConn{ctx, c2, c1}
 }
 
@@ -50,8 +51,8 @@ func sockPairProto(ctx context.Context) (fsutil.Stream, fsutil.Stream) {
 
 type fakeConn struct {
 	ctx      context.Context
-	recvChan chan *fsutil.Packet
-	sendChan chan *fsutil.Packet
+	recvChan chan *fstypes.Packet
+	sendChan chan *fstypes.Packet
 }
 
 func (fc *fakeConn) Context() context.Context {
@@ -59,7 +60,7 @@ func (fc *fakeConn) Context() context.Context {
 }
 
 func (fc *fakeConn) RecvMsg(m interface{}) error {
-	p, ok := m.(*fsutil.Packet)
+	p, ok := m.(*fstypes.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
@@ -73,7 +74,7 @@ func (fc *fakeConn) RecvMsg(m interface{}) error {
 }
 
 func (fc *fakeConn) SendMsg(m interface{}) error {
-	p, ok := m.(*fsutil.Packet)
+	p, ok := m.(*fstypes.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
@@ -98,7 +99,7 @@ func (fc *fakeConnProto) Context() context.Context {
 }
 
 func (fc *fakeConnProto) RecvMsg(m interface{}) error {
-	p, ok := m.(*fsutil.Packet)
+	p, ok := m.(*fstypes.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
@@ -111,7 +112,7 @@ func (fc *fakeConnProto) RecvMsg(m interface{}) error {
 }
 
 func (fc *fakeConnProto) SendMsg(m interface{}) error {
-	p, ok := m.(*fsutil.Packet)
+	p, ok := m.(*fstypes.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
