@@ -8,18 +8,19 @@ import (
 	"github.com/containerd/continuity/sysx"
 )
 
-func copyXAttrs(dst, src string) error {
+// copyXAttrs requires xeh to be non-nil
+func copyXAttrs(dst, src string, xeh XAttrErrorHandler) error {
 	xattrKeys, err := sysx.LListxattr(src)
 	if err != nil {
-		return errors.Wrapf(err, "failed to list xattrs on %s", src)
+		return xeh(dst, src, "", errors.Wrapf(err, "failed to list xattrs on %s", src))
 	}
 	for _, xattr := range xattrKeys {
 		data, err := sysx.LGetxattr(src, xattr)
 		if err != nil {
-			return errors.Wrapf(err, "failed to get xattr %q on %s", xattr, src)
+			return xeh(dst, src, xattr, errors.Wrapf(err, "failed to get xattr %q on %s", xattr, src))
 		}
 		if err := sysx.LSetxattr(dst, xattr, data, 0); err != nil {
-			return errors.Wrapf(err, "failed to set xattr %q on %s", xattr, dst)
+			return xeh(dst, src, xattr, errors.Wrapf(err, "failed to set xattr %q on %s", xattr, dst))
 		}
 	}
 
