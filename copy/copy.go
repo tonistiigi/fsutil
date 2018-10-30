@@ -37,7 +37,7 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 	}
 	dst = filepath.Clean(dst)
 
-	c := newCopier(ci.Chown)
+	c := newCopier(ci.Chown, ci.XAttrErrorHandler)
 	srcs := []string{src}
 
 	destRequiresDir := false
@@ -97,9 +97,12 @@ type ChownOpt struct {
 	Uid, Gid int
 }
 
+type XAttrErrorHandler func(dst, src, xattrKey string, err error) error
+
 type CopyInfo struct {
-	Chown          *ChownOpt
-	AllowWildcards bool
+	Chown             *ChownOpt
+	AllowWildcards    bool
+	XAttrErrorHandler XAttrErrorHandler
 }
 
 type Opt func(*CopyInfo)
@@ -114,13 +117,32 @@ func AllowWildcards(ci *CopyInfo) {
 	ci.AllowWildcards = true
 }
 
-type copier struct {
-	chown  *ChownOpt
-	inodes map[uint64]string
+func WithXAttrErrorHandler(h XAttrErrorHandler) Opt {
+	return func(ci *CopyInfo) {
+		ci.XAttrErrorHandler = h
+	}
 }
 
-func newCopier(chown *ChownOpt) *copier {
-	return &copier{inodes: map[uint64]string{}, chown: chown}
+func AllowXAttrErrors(ci *CopyInfo) {
+	h := func(string, string, string, error) error {
+		return nil
+	}
+	WithXAttrErrorHandler(h)(ci)
+}
+
+type copier struct {
+	chown             *ChownOpt
+	inodes            map[uint64]string
+	xattrErrorHandler XAttrErrorHandler
+}
+
+func newCopier(chown *ChownOpt, xeh XAttrErrorHandler) *copier {
+	if xeh == nil {
+		xeh = func(dst, src, key string, err error) error {
+			return err
+		}
+	}
+	return &copier{inodes: map[uint64]string{}, chown: chown, xattrErrorHandler: xeh}
 }
 
 // dest is always clean
@@ -184,7 +206,7 @@ func (c *copier) copy(ctx context.Context, src, target string, overwriteTargetMe
 			return errors.Wrap(err, "failed to copy file info")
 		}
 
-		if err := copyXAttrs(target, src); err != nil {
+		if err := copyXAttrs(target, src, c.xattrErrorHandler); err != nil {
 			return errors.Wrap(err, "failed to copy xattrs")
 		}
 	}
