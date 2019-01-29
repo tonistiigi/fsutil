@@ -117,11 +117,11 @@ func benchmarkIncrementalCopy(b *testing.B, fn func(string, string) error, size 
 }
 
 func copyWithTar(src, dest string) error {
-	return archive.CopyWithTar(src, dest)
+	return archive.NewDefaultArchiver().CopyWithTar(src, dest)
 }
 
 func chrootCopyWithTar(src, dest string) error {
-	return chrootarchive.CopyWithTar(src, dest)
+	return chrootarchive.NewArchiver(nil).CopyWithTar(src, dest)
 }
 
 func cpa(src, dest string) error {
