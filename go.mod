@@ -3,7 +3,7 @@ module github.com/tonistiigi/fsutil
 require (
 	github.com/Microsoft/go-winio v0.4.11 // indirect
 	github.com/Microsoft/hcsshim v0.8.5 // indirect
-	github.com/containerd/containerd v1.2.1-0.20190212172151-f5b0fa220df8
+	github.com/containerd/containerd v1.2.4
 	github.com/containerd/continuity v0.0.0-20181001140422-bd77b46c8352
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/docker v0.0.0-20180531152204-71cd53e4a197
@@ -15,7 +15,7 @@ require (
 	github.com/onsi/gomega v1.4.3 // indirect
 	github.com/opencontainers/go-digest v1.0.0-rc1
 	github.com/opencontainers/image-spec v1.0.1 // indirect
-	github.com/opencontainers/runc v0.0.0-20190115041553-12f6a991201f // indirect
+	github.com/opencontainers/runc v1.0.0-rc6 // indirect
 	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.0.3 // indirect
 	github.com/stretchr/testify v1.3.0
