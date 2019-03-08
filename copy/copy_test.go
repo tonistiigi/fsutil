@@ -59,16 +59,11 @@ func TestCopyToWorkDir(t *testing.T) {
 
 	require.NoError(t, apply.Apply(t1))
 
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-
 	t2, err := ioutil.TempDir("", "test")
 	require.NoError(t, err)
 	defer os.RemoveAll(t2)
-	defer os.Chdir(wd)
-	os.Chdir(t2)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), "foo.txt")
+	err = Copy(context.TODO(), t1, "foo.txt", t2, "foo.txt")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
@@ -90,7 +85,7 @@ func TestCopySingleFile(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(t2)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), t2)
+	err = Copy(context.TODO(), t1, "foo.txt", t2, "/")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
@@ -100,7 +95,7 @@ func TestCopySingleFile(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(t2)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), filepath.Join(t3, "foo.txt"))
+	err = Copy(context.TODO(), t1, "foo.txt", t3, "foo.txt")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
@@ -110,7 +105,7 @@ func TestCopySingleFile(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(t2)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), filepath.Join(t4, "foo2.txt"))
+	err = Copy(context.TODO(), t1, "foo.txt", t4, "foo2.txt")
 	require.NoError(t, err)
 
 	_, err = os.Stat(filepath.Join(t4, "foo2.txt"))
@@ -132,19 +127,19 @@ func TestCopyOverrideFile(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(t2)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), filepath.Join(t2, "foo.txt"))
+	err = Copy(context.TODO(), t1, "foo.txt", t2, "foo.txt")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo.txt"), filepath.Join(t2, "foo.txt"))
+	err = Copy(context.TODO(), t1, "foo.txt", t2, "foo.txt")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
 
-	err = Copy(context.TODO(), t1+"/.", t2)
+	err = Copy(context.TODO(), t1, "/.", t2, "/")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
@@ -167,13 +162,15 @@ func TestCopyDirectoryBasename(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(t2)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo"), filepath.Join(t2, "foo"))
+	err = Copy(context.TODO(), t1, "foo", t2, "foo")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo"), filepath.Join(t2, "foo"))
+	err = Copy(context.TODO(), t1, "foo", t2, "foo", WithCopyInfo(CopyInfo{
+		CopyDirContents: true,
+	}))
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
@@ -197,10 +194,10 @@ func TestCopyWildcards(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(t2)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo*"), t2)
+	err = Copy(context.TODO(), t1, "foo*", t2, "/")
 	require.Error(t, err)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "foo*"), t2, AllowWildcards)
+	err = Copy(context.TODO(), t1, "foo*", t2, "/", AllowWildcards)
 	require.NoError(t, err)
 
 	_, err = os.Stat(filepath.Join(t2, "foo.txt"))
@@ -215,7 +212,7 @@ func TestCopyWildcards(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(t2)
 
-	err = Copy(context.TODO(), filepath.Join(t1, "bar*"), filepath.Join(t2, "foo.txt"), AllowWildcards)
+	err = Copy(context.TODO(), t1, "bar*", t2, "foo.txt", AllowWildcards)
 	require.NoError(t, err)
 	dt, err := ioutil.ReadFile(filepath.Join(t2, "foo.txt"))
 	require.NoError(t, err)
@@ -247,18 +244,20 @@ func TestCopyExistingDirDest(t *testing.T) {
 	)
 	require.NoError(t, apply.Apply(t2))
 
-	for _, x := range []string {"dir", "dir/bar.txt"} {
+	for _, x := range []string{"dir", "dir/bar.txt"} {
 		err = os.Chown(filepath.Join(t2, x), 1, 1)
 		require.NoErrorf(t, err, "x=%s", x)
 	}
 
-	err = Copy(context.TODO(), filepath.Join(t1, "dir"), filepath.Join(t2, "dir"))
+	err = Copy(context.TODO(), t1, "dir", t2, "dir", WithCopyInfo(CopyInfo{
+		CopyDirContents: true,
+	}))
 	require.NoError(t, err)
 
 	// verify that existing destination dir's metadata was not overwritten
 	st, err := os.Lstat(filepath.Join(t2, "dir"))
 	require.NoError(t, err)
-	require.Equal(t, st.Mode() & os.ModePerm, os.FileMode(0700))
+	require.Equal(t, st.Mode()&os.ModePerm, os.FileMode(0700))
 	uid, gid := getUidGid(st)
 	require.Equal(t, 1, uid)
 	require.Equal(t, 1, gid)
@@ -270,7 +269,7 @@ func TestCopyExistingDirDest(t *testing.T) {
 	// verify that existing file's content and metadata was overwritten
 	st, err = os.Lstat(filepath.Join(t2, "dir/bar.txt"))
 	require.NoError(t, err)
-	require.Equal(t, st.Mode() & os.ModePerm, os.FileMode(0644))
+	require.Equal(t, os.FileMode(0644), st.Mode()&os.ModePerm)
 	uid, gid = getUidGid(st)
 	require.Equal(t, 0, uid)
 	require.Equal(t, 0, gid)
@@ -296,7 +295,7 @@ func testCopy(apply fstest.Applier) error {
 		return errors.Wrap(err, "failed to apply changes")
 	}
 
-	if err := Copy(context.TODO(), t1+"/.", t2); err != nil {
+	if err := Copy(context.TODO(), t1, "/.", t2, "/"); err != nil {
 		return errors.Wrap(err, "failed to copy")
 	}
 

@@ -17,24 +17,36 @@ func getUidGid(fi os.FileInfo) (uid, gid int) {
 }
 
 func (c *copier) copyFileInfo(fi os.FileInfo, name string) error {
-	uid, gid := getUidGid(fi)
 	st := fi.Sys().(*syscall.Stat_t)
-	if c.chown != nil {
-		uid, gid = c.chown.Uid, c.chown.Gid
+
+	chown := c.chown
+	if chown == nil {
+		uid, gid := getUidGid(fi)
+		chown = &ChownOpt{Uid: uid, Gid: gid}
 	}
-	if err := os.Lchown(name, uid, gid); err != nil {
+	if err := Chown(name, chown); err != nil {
 		return errors.Wrapf(err, "failed to chown %s", name)
 	}
 
+	m := fi.Mode()
+	if c.mode != nil {
+		m = (m & ^os.FileMode(0777)) | os.FileMode(*c.mode&0777)
+	}
 	if (fi.Mode() & os.ModeSymlink) != os.ModeSymlink {
-		if err := os.Chmod(name, fi.Mode()); err != nil {
+		if err := os.Chmod(name, m); err != nil {
 			return errors.Wrapf(err, "failed to chmod %s", name)
 		}
 	}
 
-	timespec := []unix.Timespec{unix.Timespec(sys.StatAtime(st)), unix.Timespec(sys.StatMtime(st))}
-	if err := unix.UtimesNanoAt(unix.AT_FDCWD, name, timespec, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return errors.Wrapf(err, "failed to utime %s", name)
+	if c.utime != nil {
+		if err := Utimes(name, c.utime); err != nil {
+			return err
+		}
+	} else {
+		timespec := []unix.Timespec{unix.Timespec(sys.StatAtime(st)), unix.Timespec(sys.StatMtime(st))}
+		if err := unix.UtimesNanoAt(unix.AT_FDCWD, name, timespec, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return errors.Wrapf(err, "failed to utime %s", name)
+		}
 	}
 
 	return nil
