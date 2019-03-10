@@ -278,6 +278,52 @@ func TestCopyExistingDirDest(t *testing.T) {
 	require.Equal(t, "bar-contents", string(dt))
 }
 
+func TestCopySymlinks(t *testing.T) {
+	t1, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t1)
+
+	apply := fstest.Apply(
+		fstest.CreateDir("testdir", 0755),
+		fstest.CreateFile("testdir/foo.txt", []byte("foo-contents"), 0644),
+		fstest.Symlink("foo.txt", "testdir/link2"),
+		fstest.Symlink("/testdir", "link"),
+	)
+	require.NoError(t, apply.Apply(t1))
+
+	t2, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), t1, "link/link2", t2, "foo", WithCopyInfo(CopyInfo{
+		FollowLinks: true,
+	}))
+	require.NoError(t, err)
+
+	// verify that existing destination dir's metadata was not overwritten
+	st, err := os.Lstat(filepath.Join(t2, "foo"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0644), st.Mode()&os.ModePerm)
+	require.Equal(t, 0, int(st.Mode()&os.ModeSymlink))
+	dt, err := ioutil.ReadFile(filepath.Join(t2, "foo"))
+	require.Equal(t, "foo-contents", string(dt))
+
+	t3, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), t1, "link/link2", t3, "foo", WithCopyInfo(CopyInfo{}))
+	require.NoError(t, err)
+
+	// verify that existing destination dir's metadata was not overwritten
+	st, err = os.Lstat(filepath.Join(t3, "foo"))
+	require.NoError(t, err)
+	require.Equal(t, os.ModeSymlink, st.Mode()&os.ModeSymlink)
+	link, err := os.Readlink(filepath.Join(t3, "foo"))
+	require.NoError(t, err)
+	require.Equal(t, "foo.txt", link)
+}
+
 func testCopy(apply fstest.Applier) error {
 	t1, err := ioutil.TempDir("", "test-copy-src-")
 	if err != nil {

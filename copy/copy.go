@@ -21,7 +21,23 @@ var bufferPool = &sync.Pool{
 	},
 }
 
-func ResolveWildcards(root, src string) ([]string, error) {
+func rootPath(root, p string, followLinks bool) (string, error) {
+	p = filepath.Join("/", p)
+	if p == "/" {
+		return root, nil
+	}
+	if followLinks {
+		return fs.RootPath(root, p)
+	}
+	d, f := filepath.Split(p)
+	ppath, err := fs.RootPath(root, d)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(ppath, f), nil
+}
+
+func ResolveWildcards(root, src string, followLinks bool) ([]string, error) {
 	d1, d2 := splitWildcards(src)
 	if d2 != "" {
 		matches, err := resolveWildcards(filepath.Join(root, d1), d2)
@@ -33,7 +49,7 @@ func ResolveWildcards(root, src string) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			p, err = fs.RootPath(root, p)
+			p, err = rootPath(root, p, followLinks)
 			if err != nil {
 				return nil, err
 			}
@@ -46,7 +62,7 @@ func ResolveWildcards(root, src string) ([]string, error) {
 		return matches, nil
 	}
 
-	p, err := fs.RootPath(root, d1)
+	p, err := rootPath(root, d1, followLinks)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +104,7 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 	srcs := []string{src}
 
 	if ci.AllowWildcards {
-		matches, err := ResolveWildcards(srcRoot, src)
+		matches, err := ResolveWildcards(srcRoot, src, ci.FollowLinks)
 		if err != nil {
 			return err
 		}
@@ -99,7 +115,7 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 	}
 
 	for _, src := range srcs {
-		srcFollowed, err := fs.RootPath(srcRoot, src)
+		srcFollowed, err := rootPath(srcRoot, src, ci.FollowLinks)
 		if err != nil {
 			return err
 		}
@@ -157,6 +173,7 @@ type CopyInfo struct {
 	Mode              *int
 	XAttrErrorHandler XAttrErrorHandler
 	CopyDirContents   bool
+	FollowLinks       bool
 }
 
 type Opt func(*CopyInfo)
