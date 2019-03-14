@@ -8,7 +8,9 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/containerd/continuity/fs"
 	"github.com/pkg/errors"
 )
 
@@ -19,9 +21,62 @@ var bufferPool = &sync.Pool{
 	},
 }
 
+func rootPath(root, p string, followLinks bool) (string, error) {
+	p = filepath.Join("/", p)
+	if p == "/" {
+		return root, nil
+	}
+	if followLinks {
+		return fs.RootPath(root, p)
+	}
+	d, f := filepath.Split(p)
+	ppath, err := fs.RootPath(root, d)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(ppath, f), nil
+}
+
+func ResolveWildcards(root, src string, followLinks bool) ([]string, error) {
+	d1, d2 := splitWildcards(src)
+	if d2 != "" {
+		matches, err := resolveWildcards(filepath.Join(root, d1), d2)
+		if err != nil {
+			return nil, err
+		}
+		for i, m := range matches {
+			p, err := rel(root, m)
+			if err != nil {
+				return nil, err
+			}
+			p, err = rootPath(root, p, followLinks)
+			if err != nil {
+				return nil, err
+			}
+			p, err = rel(root, p)
+			if err != nil {
+				return nil, err
+			}
+			matches[i] = p
+		}
+		return matches, nil
+	}
+
+	p, err := rootPath(root, d1, followLinks)
+	if err != nil {
+		return nil, err
+	}
+	p, err = rel(root, p)
+	if err != nil {
+		return nil, err
+	}
+
+	return []string{p}, nil
+}
+
 // Copy copies files using `cp -a` semantics.
 // Copy is likely unsafe to be used in non-containerized environments.
-func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
+func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) error {
 	var ci CopyInfo
 	for _, o := range opts {
 		o(&ci)
@@ -31,38 +86,41 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 		ensureDstPath = d
 	}
 	if ensureDstPath != "" {
-		if err := mkdirp(ensureDstPath, ci); err != nil {
+		ensureDstPath, err := fs.RootPath(dstRoot, ensureDstPath)
+		if err != nil {
+			return err
+		}
+		if err := MkdirAll(ensureDstPath, 0755, ci.Chown, ci.Utime); err != nil {
 			return err
 		}
 	}
-	dst = filepath.Clean(dst)
 
-	c := newCopier(ci.Chown, ci.XAttrErrorHandler)
+	dst, err := fs.RootPath(dstRoot, filepath.Clean(dst))
+	if err != nil {
+		return err
+	}
+
+	c := newCopier(ci.Chown, ci.Utime, ci.Mode, ci.XAttrErrorHandler)
 	srcs := []string{src}
 
-	destRequiresDir := false
 	if ci.AllowWildcards {
-		d1, d2 := splitWildcards(src)
-		if d2 != "" {
-			matches, err := resolveWildcards(d1, d2)
-			if err != nil {
-				return err
-			}
-			srcs = matches
-			destRequiresDir = true
+		matches, err := ResolveWildcards(srcRoot, src, ci.FollowLinks)
+		if err != nil {
+			return err
 		}
+		if len(matches) == 0 {
+			return errors.Errorf("no matches found: %s", src)
+		}
+		srcs = matches
 	}
 
 	for _, src := range srcs {
-		srcFollowed, err := filepath.EvalSymlinks(src)
+		srcFollowed, err := rootPath(srcRoot, src, ci.FollowLinks)
 		if err != nil {
 			return err
 		}
-		dst, err := normalizedCopyInputs(srcFollowed, src, dst, destRequiresDir)
+		dst, err := c.prepareTargetDir(srcFollowed, src, dst, ci.CopyDirContents)
 		if err != nil {
-			return err
-		}
-		if err := mkdirp(filepath.Dir(dst), ci); err != nil {
 			return err
 		}
 		if err := c.copy(ctx, srcFollowed, dst, false); err != nil {
@@ -73,7 +131,7 @@ func Copy(ctx context.Context, src, dst string, opts ...Opt) error {
 	return nil
 }
 
-func normalizedCopyInputs(srcFollowed, src, destPath string, forceDir bool) (string, error) {
+func (c *copier) prepareTargetDir(srcFollowed, src, destPath string, copyDirContents bool) (string, error) {
 	fiSrc, err := os.Lstat(srcFollowed)
 	if err != nil {
 		return "", err
@@ -86,8 +144,17 @@ func normalizedCopyInputs(srcFollowed, src, destPath string, forceDir bool) (str
 		}
 	}
 
-	if (forceDir && fiSrc.IsDir()) || (!fiSrc.IsDir() && fiDest != nil && fiDest.IsDir()) {
+	if (!copyDirContents && fiSrc.IsDir() && fiDest != nil) || (!fiSrc.IsDir() && fiDest != nil && fiDest.IsDir()) {
 		destPath = filepath.Join(destPath, filepath.Base(src))
+	}
+
+	target := filepath.Dir(destPath)
+
+	if copyDirContents && fiSrc.IsDir() && fiDest == nil {
+		target = destPath
+	}
+	if err := MkdirAll(target, 0755, c.chown, c.utime); err != nil {
+		return "", err
 	}
 
 	return destPath, nil
@@ -101,11 +168,21 @@ type XAttrErrorHandler func(dst, src, xattrKey string, err error) error
 
 type CopyInfo struct {
 	Chown             *ChownOpt
+	Utime             *time.Time
 	AllowWildcards    bool
+	Mode              *int
 	XAttrErrorHandler XAttrErrorHandler
+	CopyDirContents   bool
+	FollowLinks       bool
 }
 
 type Opt func(*CopyInfo)
+
+func WithCopyInfo(ci CopyInfo) func(*CopyInfo) {
+	return func(c *CopyInfo) {
+		*c = ci
+	}
+}
 
 func WithChown(uid, gid int) Opt {
 	return func(ci *CopyInfo) {
@@ -132,17 +209,19 @@ func AllowXAttrErrors(ci *CopyInfo) {
 
 type copier struct {
 	chown             *ChownOpt
+	utime             *time.Time
+	mode              *int
 	inodes            map[uint64]string
 	xattrErrorHandler XAttrErrorHandler
 }
 
-func newCopier(chown *ChownOpt, xeh XAttrErrorHandler) *copier {
+func newCopier(chown *ChownOpt, tm *time.Time, mode *int, xeh XAttrErrorHandler) *copier {
 	if xeh == nil {
 		xeh = func(dst, src, key string, err error) error {
 			return err
 		}
 	}
-	return &copier{inodes: map[uint64]string{}, chown: chown, xattrErrorHandler: xeh}
+	return &copier{inodes: map[uint64]string{}, chown: chown, utime: tm, xattrErrorHandler: xeh, mode: mode}
 }
 
 // dest is always clean
@@ -337,9 +416,6 @@ func resolveWildcards(basePath, comp string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(out) == 0 {
-		return nil, errors.Errorf("no matches found: %s", filepath.Join(basePath, comp))
-	}
 	return out, nil
 }
 
@@ -358,16 +434,4 @@ func rel(basepath, targpath string) (string, error) {
 		}
 	}
 	return filepath.Rel(basepath, targpath)
-}
-
-func mkdirp(p string, ci CopyInfo) error {
-	if err := os.MkdirAll(p, 0755); err != nil {
-		return err
-	}
-	if chown := ci.Chown; chown != nil {
-		if err := os.Lchown(p, chown.Uid, chown.Gid); err != nil {
-			return errors.Wrapf(err, "failed to chown %s", p)
-		}
-	}
-	return nil
 }
