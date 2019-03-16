@@ -40,7 +40,11 @@ func rootPath(root, p string, followLinks bool) (string, error) {
 func ResolveWildcards(root, src string, followLinks bool) ([]string, error) {
 	d1, d2 := splitWildcards(src)
 	if d2 != "" {
-		matches, err := resolveWildcards(filepath.Join(root, d1), d2)
+		p, err := rootPath(root, d1, followLinks)
+		if err != nil {
+			return nil, err
+		}
+		matches, err := resolveWildcards(p, d2)
 		if err != nil {
 			return nil, err
 		}
@@ -49,29 +53,11 @@ func ResolveWildcards(root, src string, followLinks bool) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			p, err = rootPath(root, p, followLinks)
-			if err != nil {
-				return nil, err
-			}
-			p, err = rel(root, p)
-			if err != nil {
-				return nil, err
-			}
 			matches[i] = p
 		}
 		return matches, nil
 	}
-
-	p, err := rootPath(root, d1, followLinks)
-	if err != nil {
-		return nil, err
-	}
-	p, err = rel(root, p)
-	if err != nil {
-		return nil, err
-	}
-
-	return []string{p}, nil
+	return []string{d1}, nil
 }
 
 // Copy copies files using `cp -a` semantics.
