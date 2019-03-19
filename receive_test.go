@@ -116,7 +116,7 @@ func TestCopySwitchDirToFile(t *testing.T) {
 		eg.Go(func() error {
 			defer s1.(*fakeConnProto).closeSend()
 			return Send(ctx, s1, NewFS(src, &WalkOpt{
-				Map: func(s *types.Stat) bool {
+				Map: func(_ string, s *types.Stat) bool {
 					s.Uid = 0
 					s.Gid = 0
 					return true
@@ -127,7 +127,7 @@ func TestCopySwitchDirToFile(t *testing.T) {
 			return Receive(ctx, s2, dest, ReceiveOpt{
 				NotifyHashed:  chs.HandleChange,
 				ContentHasher: simpleSHA256Hasher,
-				Filter: func(s *types.Stat) bool {
+				Filter: func(_ string, s *types.Stat) bool {
 					s.Uid = uint32(os.Getuid())
 					s.Gid = uint32(os.Getgid())
 					return true
@@ -185,7 +185,7 @@ func TestCopySimple(t *testing.T) {
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
 		return Send(ctx, s1, NewFS(d, &WalkOpt{
-			Map: func(s *types.Stat) bool {
+			Map: func(_ string, s *types.Stat) bool {
 				s.Uid = 0
 				s.Gid = 0
 				return true
@@ -196,7 +196,7 @@ func TestCopySimple(t *testing.T) {
 		return Receive(ctx, s2, dest, ReceiveOpt{
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
-			Filter: func(s *types.Stat) bool {
+			Filter: func(_ string, s *types.Stat) bool {
 				s.Uid = uint32(os.Getuid())
 				s.Gid = uint32(os.Getgid())
 				return true
@@ -258,7 +258,7 @@ file zzz.aa
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
 		return Send(ctx, s1, NewFS(d, &WalkOpt{
-			Map: func(s *types.Stat) bool {
+			Map: func(_ string, s *types.Stat) bool {
 				s.Uid = 0
 				s.Gid = 0
 				return true
@@ -269,7 +269,7 @@ file zzz.aa
 		return Receive(ctx, s2, dest, ReceiveOpt{
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
-			Filter: func(s *types.Stat) bool {
+			Filter: func(_ string, s *types.Stat) bool {
 				s.Uid = uint32(os.Getuid())
 				s.Gid = uint32(os.Getgid())
 				return true

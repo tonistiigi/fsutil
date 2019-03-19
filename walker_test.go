@@ -217,7 +217,7 @@ func TestWalkerMap(t *testing.T) {
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
 	err = Walk(context.Background(), d, &WalkOpt{
-		Map: func(s *types.Stat) bool {
+		Map: func(_ string, s *types.Stat) bool {
 			if strings.HasPrefix(s.Path, "foo") {
 				s.Path = "_" + s.Path
 				return true
