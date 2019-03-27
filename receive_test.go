@@ -78,7 +78,11 @@ func TestCopyWithSubDir(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, SubDirFS(NewFS(d, &WalkOpt{}), types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}), nil)
+		subdir, err := SubDirFS([]Dir{{FS: NewFS(d, &WalkOpt{}), Stat: types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
+		if err != nil {
+			return err
+		}
+		return Send(ctx, s1, subdir, nil)
 	})
 	eg.Go(func() error {
 		return Receive(ctx, s2, dest, ReceiveOpt{})
