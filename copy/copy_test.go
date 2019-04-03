@@ -220,6 +220,10 @@ func TestCopyWildcards(t *testing.T) {
 }
 
 func TestCopyExistingDirDest(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skip()
+	}
+
 	t1, err := ioutil.TempDir("", "test")
 	require.NoError(t, err)
 	defer os.RemoveAll(t1)
