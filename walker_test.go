@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -330,6 +331,11 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 				}
 			} else if len(stat.Linkname) > 0 {
 				if err := os.Link(filepath.Join(tmpdir, stat.Linkname), p); err != nil {
+					return "", err
+				}
+			} else if c.fi.Mode()&os.ModeSocket != 0 {
+				// not closing listener because it would remove the socket file
+				if _, err := net.Listen("unix", p); err != nil {
 					return "", err
 				}
 			} else {
