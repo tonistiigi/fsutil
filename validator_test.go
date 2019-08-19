@@ -223,6 +223,8 @@ func parseChange(str string) *change {
 		}
 	case "dir":
 		st.Mode |= uint32(os.ModeDir)
+	case "socket":
+		st.Mode |= uint32(os.ModeSocket)
 	case "symlink":
 		if len(f) < 4 {
 			panic(errStr)

@@ -17,6 +17,7 @@ func TestStat(t *testing.T) {
 		"ADD zzz/bb dir",
 		"ADD zzz/bb/cc dir",
 		"ADD zzz/bb/cc/dd symlink ../../",
+		"ADD sock socket",
 	}))
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
@@ -44,4 +45,10 @@ func TestStat(t *testing.T) {
 	assert.NotZero(t, st.ModTime)
 	st.ModTime = 0
 	assert.Equal(t, &types.Stat{Path: "dd", Mode: uint32(os.ModeSymlink | 0777), Size_: 6, Linkname: "../../"}, st)
+
+	st, err = Stat(filepath.Join(d, "sock"))
+	assert.NoError(t, err)
+	assert.NotZero(t, st.ModTime)
+	st.ModTime = 0
+	assert.Equal(t, &types.Stat{Path: "sock", Mode: 0755 /* ModeSocket not set */}, st)
 }
