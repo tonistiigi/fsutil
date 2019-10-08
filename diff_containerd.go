@@ -87,7 +87,15 @@ func doubleWalkDiff(ctx context.Context, changeFn ChangeFunc, a, b walkerFn, fil
 			}
 
 			var f *types.Stat
-			k, p := pathChange(f1, f2)
+			var f2copy *currentPath
+			if f2 != nil {
+				statCopy := *f2.stat
+				if filter != nil {
+					filter(f2.path, &statCopy)
+				}
+				f2copy = &currentPath{path: f2.path, stat: &statCopy}
+			}
+			k, p := pathChange(f1, f2copy)
 			switch k {
 			case ChangeKindAdd:
 				if rmdir != "" {
@@ -108,11 +116,11 @@ func doubleWalkDiff(ctx context.Context, changeFn ChangeFunc, a, b walkerFn, fil
 				}
 				f1 = nil
 			case ChangeKindModify:
-				same, err := sameFile(f1, f2)
+				same, err := sameFile(f1, f2copy)
 				if err != nil {
 					return err
 				}
-				if f1.stat.IsDir() && !f2.stat.IsDir() {
+				if f1.stat.IsDir() && !f2copy.stat.IsDir() {
 					rmdir = f1.path + string(os.PathSeparator)
 				} else if rmdir != "" {
 					rmdir = ""
