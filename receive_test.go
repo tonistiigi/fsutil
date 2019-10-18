@@ -186,6 +186,8 @@ func TestCopySimple(t *testing.T) {
 	eg, ctx := errgroup.WithContext(context.Background())
 	s1, s2 := sockPairProto(ctx)
 
+	tm := time.Now().Truncate(time.Hour)
+
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
 		return Send(ctx, s1, NewFS(d, &WalkOpt{
@@ -200,9 +202,10 @@ func TestCopySimple(t *testing.T) {
 		return Receive(ctx, s2, dest, ReceiveOpt{
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
-			Filter: func(_ string, s *types.Stat) bool {
+			Filter: func(p string, s *types.Stat) bool {
 				s.Uid = uint32(os.Getuid())
 				s.Gid = uint32(os.Getgid())
+				s.ModTime = tm.UnixNano()
 				return true
 			},
 		})
@@ -231,6 +234,10 @@ file zzz.aa
 	dt, err = ioutil.ReadFile(filepath.Join(dest, "foo2"))
 	assert.NoError(t, err)
 	assert.Equal(t, "dat2", string(dt))
+
+	fi, err := os.Stat(filepath.Join(dest, "foo2"))
+	assert.NoError(t, err)
+	assert.Equal(t, tm, fi.ModTime())
 
 	h, ok := ts.Hash("zzz/aa")
 	assert.True(t, ok)
@@ -276,6 +283,7 @@ file zzz.aa
 			Filter: func(_ string, s *types.Stat) bool {
 				s.Uid = uint32(os.Getuid())
 				s.Gid = uint32(os.Getgid())
+				s.ModTime = tm.UnixNano()
 				return true
 			},
 		})
