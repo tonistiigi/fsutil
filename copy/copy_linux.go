@@ -20,11 +20,14 @@ func (c *copier) copyFileInfo(fi os.FileInfo, name string) error {
 	st := fi.Sys().(*syscall.Stat_t)
 
 	chown := c.chown
+	uid, gid := getUidGid(fi)
+	old := &User{Uid: uid, Gid: gid}
 	if chown == nil {
-		uid, gid := getUidGid(fi)
-		chown = &ChownOpt{Uid: uid, Gid: gid}
+		chown = func(u *User) (*User, error) {
+			return u, nil
+		}
 	}
-	if err := Chown(name, chown); err != nil {
+	if err := Chown(name, old, chown); err != nil {
 		return errors.Wrapf(err, "failed to chown %s", name)
 	}
 
