@@ -6,7 +6,6 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/containerd/containerd/sys"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
@@ -45,7 +44,7 @@ func (c *copier) copyFileInfo(fi os.FileInfo, name string) error {
 			return err
 		}
 	} else {
-		timespec := []unix.Timespec{unix.Timespec(sys.StatAtime(st)), unix.Timespec(sys.StatMtime(st))}
+		timespec := []unix.Timespec{unix.Timespec(StatAtime(st)), unix.Timespec(StatMtime(st))}
 		if err := unix.UtimesNanoAt(unix.AT_FDCWD, name, timespec, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return errors.Wrapf(err, "failed to utime %s", name)
 		}
