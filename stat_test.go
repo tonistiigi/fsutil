@@ -10,6 +10,8 @@ import (
 )
 
 func TestStat(t *testing.T) {
+	requiresRoot(t)
+
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo file data1",
 		"ADD zzz dir",
