@@ -62,6 +62,8 @@ func TestInvalidExcludePatterns(t *testing.T) {
 }
 
 func TestCopyWithSubDir(t *testing.T) {
+	requiresRoot(t)
+
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo dir",
 		"ADD foo/bar file data1",
