@@ -87,8 +87,7 @@ file bar/foo
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir bar
-`, string(b.Bytes()))
+	assert.Equal(t, ``, string(b.Bytes()))
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -128,6 +127,296 @@ file bar/foo
 	assert.Equal(t, `dir bar
 file bar/foo
 `, string(b.Bytes()))
+}
+
+func BenchmarkWalker(b *testing.B) {
+	for _, scenario := range []struct {
+		maxDepth int
+		pattern  string
+		expected int
+	}{{
+		maxDepth: 1,
+		pattern:  "target",
+		expected: 1,
+	}, {
+		maxDepth: 1,
+		pattern:  "**/target",
+		expected: 1,
+	}, {
+		maxDepth: 2,
+		pattern:  "*/target",
+		expected: 52,
+	}, {
+		maxDepth: 2,
+		pattern:  "**/target",
+		expected: 52,
+	}, {
+		maxDepth: 3,
+		pattern:  "*/*/target",
+		expected: 1378,
+	}, {
+		maxDepth: 3,
+		pattern:  "**/target",
+		expected: 1378,
+	}, {
+		maxDepth: 4,
+		pattern:  "*/*/*/target",
+		expected: 2794,
+	}, {
+		maxDepth: 4,
+		pattern:  "**/target",
+		expected: 2794,
+	}, {
+		maxDepth: 5,
+		pattern:  "*/*/*/*/target",
+		expected: 1405,
+	}, {
+		maxDepth: 5,
+		pattern:  "**/target",
+		expected: 1405,
+	}, {
+		maxDepth: 6,
+		pattern:  "*/*/*/*/*/target",
+		expected: 2388,
+	}, {
+		maxDepth: 6,
+		pattern:  "**/target",
+		expected: 2388,
+	}} {
+		scenario := scenario // copy loop var
+		b.Run(fmt.Sprintf("[%d]-%s", scenario.maxDepth, scenario.pattern), func(b *testing.B) {
+			tmpdir, err := ioutil.TempDir("", "walk")
+			if err != nil {
+				b.Error(err)
+			}
+			defer func() {
+				b.StopTimer()
+				os.RemoveAll(tmpdir)
+			}()
+			mkBenchTree(tmpdir, scenario.maxDepth, 1)
+
+			// don't include time to setup dirs in benchmark
+			b.ResetTimer()
+
+			for i := 0; i < b.N; i++ {
+				count := 0
+				err = Walk(context.Background(), tmpdir, &WalkOpt{
+					IncludePatterns: []string{scenario.pattern},
+				}, func(path string, fi os.FileInfo, err error) error {
+					count++
+					return nil
+				})
+				if err != nil {
+					b.Error(err)
+				}
+				if count != scenario.expected {
+					b.Errorf("Got count %d, expected %d", count, scenario.expected)
+				}
+			}
+		})
+	}
+
+}
+
+func TestWalkerDoublestarInclude(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD a dir",
+		"ADD a/b dir",
+		"ADD a/b/baz dir",
+		"ADD a/b/bar dir ",
+		"ADD a/b/bar/foo file",
+		"ADD a/b/bar/fop file",
+		"ADD bar dir",
+		"ADD bar/foo file",
+		"ADD baz dir",
+		"ADD foo2 file",
+		"ADD foo dir",
+		"ADD foo/bar dir",
+		"ADD foo/bar/bee file",
+	}))
+
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, `
+		dir a
+		dir a/b
+		dir a/b/bar
+		file a/b/bar/foo
+		file a/b/bar/fop
+		dir a/b/baz
+		dir bar
+		file bar/foo
+		dir baz
+		dir foo
+		dir foo/bar
+		file foo/bar/bee
+		file foo2
+	`, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**/bar"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, `
+		dir a
+		dir a/b
+		dir a/b/bar
+		file a/b/bar/foo
+		file a/b/bar/fop
+		dir bar
+		file bar/foo
+		dir foo
+		dir foo/bar
+		file foo/bar/bee
+	`, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**/bar/foo"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, `
+		dir a
+		dir a/b
+		dir a/b/bar
+		file a/b/bar/foo
+		dir bar
+		file bar/foo
+	`, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**/b*"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, `
+		dir a
+		dir a/b
+		dir a/b/bar
+		file a/b/bar/foo
+		file a/b/bar/fop
+		dir a/b/baz
+		dir bar
+		file bar/foo
+		dir baz
+		dir foo
+		dir foo/bar
+		file foo/bar/bee
+	`, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**/bar/f*"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, `
+			dir a
+			dir a/b
+			dir a/b/bar
+			file a/b/bar/foo
+			file a/b/bar/fop
+			dir bar
+			file bar/foo
+	`, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**/bar/g*"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, ``, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**/f*"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, `
+		dir a
+		dir a/b
+		dir a/b/bar
+		file a/b/bar/foo
+		file a/b/bar/fop
+		dir bar
+		file bar/foo
+		dir foo
+		dir foo/bar
+		file foo/bar/bee
+		file foo2
+	`, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**/b*/f*"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, `
+		dir a
+		dir a/b
+		dir a/b/bar
+		file a/b/bar/foo
+		file a/b/bar/fop
+		dir bar
+		file bar/foo
+	`, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**/b*/foo"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, `
+		dir a
+		dir a/b
+		dir a/b/bar
+		file a/b/bar/foo
+		dir bar
+		file bar/foo
+	`, string(b.Bytes()))
+
+	// TODO can we support this? Currently filepath.Clean is called
+	// on each pattern, so this is stripping the trailing "/".  The
+	// intent is to match only directories named foo, but not files
+	// but it is currently not possible unless we relex the filepath.Clean
+	// requirement.
+	// b.Reset()
+	// err = Walk(context.Background(), d, &WalkOpt{
+	// 	IncludePatterns: []string{"**/foo/"},
+	// }, bufWalk(b))
+	// assert.NoError(t, err)
+
+	// trimEqual(t, `
+	// 	dir bar
+	// 	file bar/foo
+	// `, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"**/baz"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	trimEqual(t, `
+		dir a
+		dir a/b
+		dir a/b/baz
+		dir baz
+	`, string(b.Bytes()))
 }
 
 func TestWalkerExclude(t *testing.T) {
@@ -235,51 +524,109 @@ file _foo2
 }
 
 func TestMatchPrefix(t *testing.T) {
-	ok, partial := matchPrefix("foo", "foo")
+	ok, partial := matchPrefix("foo", "foo", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, false, partial)
 
-	ok, partial = matchPrefix("foo/bar/baz", "foo")
+	ok, partial = matchPrefix("foo/bar/baz", "foo", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, true, partial)
 
-	ok, partial = matchPrefix("foo/bar/baz", "foo/bar")
+	ok, partial = matchPrefix("foo/bar/baz", "foo/bar", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, true, partial)
 
-	ok, partial = matchPrefix("foo/bar/baz", "foo/bax")
+	ok, partial = matchPrefix("foo/bar/baz", "foo/bax", false)
 	assert.Equal(t, false, ok)
 
-	ok, partial = matchPrefix("foo/bar/baz", "foo/bar/baz")
+	ok, partial = matchPrefix("foo/bar/baz", "foo/bar/baz", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, false, partial)
 
-	ok, partial = matchPrefix("f*", "foo")
+	ok, partial = matchPrefix("f*", "foo", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, false, partial)
 
-	ok, partial = matchPrefix("foo/bar/*", "foo")
+	ok, partial = matchPrefix("foo/bar/*", "foo", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, true, partial)
 
-	ok, partial = matchPrefix("foo/*/baz", "foo")
+	ok, partial = matchPrefix("foo/*/baz", "foo", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, true, partial)
 
-	ok, partial = matchPrefix("*/*/baz", "foo")
+	ok, partial = matchPrefix("*/*/baz", "foo", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, true, partial)
 
-	ok, partial = matchPrefix("*/bar/baz", "foo/bar")
+	ok, partial = matchPrefix("*/bar/baz", "foo/bar", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, true, partial)
 
-	ok, partial = matchPrefix("*/bar/baz", "foo/bax")
+	ok, partial = matchPrefix("*/bar/baz", "foo/bax", false)
 	assert.Equal(t, false, ok)
 
-	ok, partial = matchPrefix("*/*/baz", "foo/bar/baz")
+	ok, partial = matchPrefix("*/*/baz", "foo/bar/baz", false)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("**/baz", "baz", false)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("**/baz", "foo/baz", false)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("**/baz", "foo/bar/baz", false)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("foo/**/baz", "foo/bar/baz", false)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("**", "foo/bar/baz", false)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("**", "foo/bar/baz", true)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("foo/**", "foo/bar/baz", true)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, true, partial)
+
+	ok, partial = matchPrefix("foo/**", "bar/baz", true)
+	assert.Equal(t, false, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("**/**/baz", "foo/bar/baz", false)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("**/b*", "foo/bar/baz", false)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("**/foo/bar", "foo/bar/baz/foo/bar", false)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, false, partial)
+
+	ok, partial = matchPrefix("**/foo/bar", "foo/bar/baz/foo/baz", false)
+	assert.Equal(t, false, ok)
+	assert.Equal(t, true, partial)
+
+	// doubleglob with `/` only matches directories
+	ok, partial = matchPrefix("**/b*", "foo", false)
+	assert.Equal(t, false, ok)
+	assert.Equal(t, false, partial)
+
+	// doubleglob with `/` only matches directories
+	ok, partial = matchPrefix("**/b*", "foo", true)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, true, partial)
 }
 
 func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
@@ -353,4 +700,72 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 		}
 	}
 	return tmpdir, nil
+}
+
+func trimEqual(t assert.TestingT, expected, actual string, msgAndArgs ...interface{}) bool {
+	lines := []string{}
+	for _, line := range strings.Split(expected, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	lines = append(lines, "") // we expect a trailing newline
+	expected = strings.Join(lines, "\n")
+
+	return assert.Equal(t, expected, actual, msgAndArgs)
+}
+
+// mkBenchTree will create directories named a-z recursively
+// up to 3 layers deep.  If maxDepth is > 3 we will shorten
+// the last letter to prevent the generated inodes going over
+// 25k. The final directory in the tree will contain only files.
+// Additionally there is a single file named `target`
+// in each leaf directory.
+func mkBenchTree(dir string, maxDepth, depth int) error {
+	end := 'z'
+	switch maxDepth {
+	case 1, 2, 3:
+		end = 'z' // max 19682 inodes
+	case 4:
+		end = 'k' // max 19030 inodes
+	case 5:
+		end = 'e' // max 12438 inodes
+	case 6:
+		end = 'd' // max 8188 inodes
+	case 7, 8:
+		end = 'c' // max 16398 inodes
+	case 9, 10, 11, 12:
+		end = 'b' // max 16378 inodes
+	default:
+		panic("depth cannot be > 12, would create too many files")
+	}
+
+	if depth == maxDepth {
+		fd, err := os.Create(filepath.Join(dir, "target"))
+		if err != nil {
+			return err
+		}
+		fd.Close()
+	}
+	for r := 'a'; r <= end; r++ {
+		p := filepath.Join(dir, string(r))
+		if depth == maxDepth {
+			fd, err := os.Create(p)
+			if err != nil {
+				return err
+			}
+			fd.Close()
+		} else {
+			err := os.Mkdir(p, 0755)
+			if err != nil {
+				return err
+			}
+			err = mkBenchTree(p, maxDepth, depth+1)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
