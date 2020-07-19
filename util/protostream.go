@@ -11,7 +11,8 @@ import (
 
 var bufPool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, 32*1<<10)
+		buf := make([]byte, 32*1<<10)
+		return &buf
 	},
 }
 
@@ -38,13 +39,13 @@ func (c *protoStream) RecvMsg(m interface{}) error {
 	if length == 0 {
 		return nil
 	}
-	buf := bufPool.Get().([]byte)
+	buf := *bufPool.Get().(*[]byte)
 	if cap(buf) < int(length) {
 		buf = make([]byte, length)
 	} else {
 		buf = buf[:length]
 	}
-	defer bufPool.Put(buf)
+	defer bufPool.Put(&buf)
 	if _, err := io.ReadFull(c.Reader, buf); err != nil {
 		return err
 	}
@@ -55,7 +56,7 @@ func (c *protoStream) RecvMsg(m interface{}) error {
 	return nil
 }
 
-func (fc *protoStream) SendMsg(m interface{}) error {
+func (c *protoStream) SendMsg(m interface{}) error {
 	type marshalerSizer interface {
 		MarshalTo([]byte) (int, error)
 		Size() int
@@ -67,10 +68,10 @@ func (fc *protoStream) SendMsg(m interface{}) error {
 	if _, err := msg.MarshalTo(b[4:]); err != nil {
 		return err
 	}
-	_, err := fc.Writer.Write(b)
+	_, err := c.Writer.Write(b)
 	return err
 }
 
-func (fc *protoStream) Context() context.Context {
-	return fc.ctx
+func (c *protoStream) Context() context.Context {
+	return c.ctx
 }

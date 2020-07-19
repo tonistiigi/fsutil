@@ -32,7 +32,6 @@ type DiskWriter struct {
 	opt  DiskWriterOpt
 	dest string
 
-	wg     sync.WaitGroup
 	ctx    context.Context
 	cancel func()
 	eg     *errgroup.Group
@@ -285,7 +284,6 @@ func (hw *hashedWriter) Digest() digest.Digest {
 
 type lazyFileWriter struct {
 	dest     string
-	ctx      context.Context
 	f        *os.File
 	fileMode *os.FileMode
 }
