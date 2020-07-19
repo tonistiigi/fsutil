@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+. $(dirname $0)/util
+set -eu -o pipefail -x
+
+: ${CONTINUOUS_INTEGRATION=}
+
+progressFlag=""
+if [ "$CONTINUOUS_INTEGRATION" == "true" ]; then progressFlag="--progress=plain"; fi
+
+export DOCKER_BUILDKIT=1
+docker build -o type=cacheonly -f ./hack/dockerfiles/lint.Dockerfile .

@@ -8,7 +8,6 @@ import (
 
 	"github.com/containerd/continuity"
 	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/reexec"
 )
 
@@ -120,10 +119,6 @@ func copyWithTar(src, dest string) error {
 	return archive.NewDefaultArchiver().CopyWithTar(src, dest)
 }
 
-func chrootCopyWithTar(src, dest string) error {
-	return chrootarchive.NewArchiver(nil).CopyWithTar(src, dest)
-}
-
 func cpa(src, dest string) error {
 	cmd := exec.Command("cp", "-a", src+"/.", dest)
 	return cmd.Run()
@@ -162,6 +157,9 @@ func BenchmarkCopyWithTar1000(b *testing.B) {
 	benchmarkInitialCopy(b, copyWithTar, 1000)
 }
 
+// func chrootCopyWithTar(src, dest string) error {
+// 	return chrootarchive.NewArchiver(nil).CopyWithTar(src, dest)
+// }
 // func BenchmarkChrootCopyWithTar10(b *testing.B) {
 //   benchmarkInitialCopy(b, chrootCopyWithTar, 10)
 // }
