@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - master
+      - gh_test_ci
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        GO_VERSION: ["1.13", "1.14"]
+    env:
+      GO_VERSION: ${{ matrix.GO_VERSION }}
+    steps:
+      -
+        name: Setup
+        run: |
+          docker buildx create --use
+          docker buildx inspect --bootstrap
+          docker buildx install
+      -
+        name: Checkout
+        uses: actions/checkout@v2
+      -
+        name: Build
+        run: |
+          docker buildx bake
+      -
+        name: Test
+        run: |
+          docker buildx bake test
+      -
+        name: Validate gomod
+        run: |
+          docker buildx bake validate-gomod
+      -
+        name: Cross
+        run: |
+          docker buildx bake cross
