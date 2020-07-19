@@ -25,21 +25,21 @@ type WalkOpt struct {
 func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) error {
 	root, err := filepath.EvalSymlinks(p)
 	if err != nil {
-		return errors.Wrapf(err, "failed to resolve %s", root)
+		return errors.WithStack(&os.PathError{Op: "resolve", Path: root, Err: err})
 	}
 	fi, err := os.Stat(root)
 	if err != nil {
-		return errors.Wrapf(err, "failed to stat: %s", root)
+		return errors.WithStack(err)
 	}
 	if !fi.IsDir() {
-		return errors.Errorf("%s is not a directory", root)
+		return errors.WithStack(&os.PathError{Op: "walk", Path: root, Err: syscall.ENOTDIR})
 	}
 
 	var pm *fileutils.PatternMatcher
 	if opt != nil && opt.ExcludePatterns != nil {
 		pm, err = fileutils.NewPatternMatcher(opt.ExcludePatterns)
 		if err != nil {
-			return errors.Wrapf(err, "invalid excludepaths %s", opt.ExcludePatterns)
+			return errors.Wrapf(err, "invalid excludepatterns: %s", opt.ExcludePatterns)
 		}
 	}
 
