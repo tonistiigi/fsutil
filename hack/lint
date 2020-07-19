@@ -8,5 +8,8 @@ set -eu -o pipefail -x
 progressFlag=""
 if [ "$CONTINUOUS_INTEGRATION" == "true" ]; then progressFlag="--progress=plain"; fi
 
+cacheOnlyFlag=""
+if ! docker build 2>&1 --help | grep buildx > /dev/null; then cacheOnlyFlag="-o type=cacheonly"; fi
+
 export DOCKER_BUILDKIT=1
-docker build -o type=cacheonly -f ./hack/dockerfiles/lint.Dockerfile .
+docker build $progressFlag $cacheOnlyFlag -f ./hack/dockerfiles/lint.Dockerfile .
