@@ -41,7 +41,7 @@ func TestInvalidExcludePatterns(t *testing.T) {
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
 		err := Send(ctx, s1, NewFS(d, &WalkOpt{ExcludePatterns: []string{"!"}}), nil)
-		assert.Contains(t, err.Error(), "invalid excludepaths")
+		assert.Contains(t, err.Error(), "invalid excludepatterns")
 		return err
 	})
 	eg.Go(func() error {
@@ -50,7 +50,7 @@ func TestInvalidExcludePatterns(t *testing.T) {
 			ContentHasher: simpleSHA256Hasher,
 		})
 		assert.Contains(t, err.Error(), "error from sender:")
-		assert.Contains(t, err.Error(), "invalid excludepaths")
+		assert.Contains(t, err.Error(), "invalid excludepatterns")
 		return err
 	})
 
@@ -62,7 +62,7 @@ func TestInvalidExcludePatterns(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("timeout")
 	case err = <-errCh:
-		assert.Contains(t, err.Error(), "invalid excludepaths")
+		assert.Contains(t, err.Error(), "invalid excludepatterns")
 	}
 }
 
