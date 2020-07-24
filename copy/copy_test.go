@@ -262,7 +262,7 @@ func TestCopyExistingDirDest(t *testing.T) {
 	st, err := os.Lstat(filepath.Join(t2, "dir"))
 	require.NoError(t, err)
 	require.Equal(t, st.Mode()&os.ModePerm, os.FileMode(0700))
-	uid, gid := getUidGid(st)
+	uid, gid := getUIDGID(st)
 	require.Equal(t, 1, uid)
 	require.Equal(t, 1, gid)
 
@@ -274,7 +274,7 @@ func TestCopyExistingDirDest(t *testing.T) {
 	st, err = os.Lstat(filepath.Join(t2, "dir/bar.txt"))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0644), st.Mode()&os.ModePerm)
-	uid, gid = getUidGid(st)
+	uid, gid = getUIDGID(st)
 	require.Equal(t, 0, uid)
 	require.Equal(t, 0, gid)
 	dt, err := ioutil.ReadFile(filepath.Join(t2, "dir/bar.txt"))
@@ -310,6 +310,7 @@ func TestCopySymlinks(t *testing.T) {
 	require.Equal(t, os.FileMode(0644), st.Mode()&os.ModePerm)
 	require.Equal(t, 0, int(st.Mode()&os.ModeSymlink))
 	dt, err := ioutil.ReadFile(filepath.Join(t2, "foo"))
+	require.NoError(t, err)
 	require.Equal(t, "foo-contents", string(dt))
 
 	t3, err := ioutil.TempDir("", "test")

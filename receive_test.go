@@ -342,18 +342,13 @@ file zzz.aa
 	assert.Equal(t, ok, false)
 }
 
-func sockPair(ctx context.Context) (Stream, Stream) {
-	c1 := make(chan *types.Packet, 32)
-	c2 := make(chan *types.Packet, 32)
-	return &fakeConn{ctx, c1, c2}, &fakeConn{ctx, c2, c1}
-}
-
 func sockPairProto(ctx context.Context) (Stream, Stream) {
 	c1 := make(chan []byte, 32)
 	c2 := make(chan []byte, 32)
 	return &fakeConnProto{ctx, c1, c2}, &fakeConnProto{ctx, c2, c1}
 }
 
+//nolint:unused
 type fakeConn struct {
 	ctx      context.Context
 	recvChan chan *types.Packet

@@ -249,6 +249,7 @@ func TestMatchPrefix(t *testing.T) {
 
 	ok, partial = matchPrefix("foo/bar/baz", "foo/bax")
 	assert.Equal(t, false, ok)
+	assert.Equal(t, true, partial)
 
 	ok, partial = matchPrefix("foo/bar/baz", "foo/bar/baz")
 	assert.Equal(t, true, ok)
@@ -276,6 +277,7 @@ func TestMatchPrefix(t *testing.T) {
 
 	ok, partial = matchPrefix("*/bar/baz", "foo/bax")
 	assert.Equal(t, false, ok)
+	assert.Equal(t, true, partial)
 
 	ok, partial = matchPrefix("*/*/baz", "foo/bar/baz")
 	assert.Equal(t, true, ok)
