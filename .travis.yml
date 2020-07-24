@@ -23,4 +23,5 @@ script:
   - docker build --progress=plain --build-arg=GO_VERSION --target=test-noroot .
   - ./hack/validate-gomod
   - ./hack/lint
+  - ./hack/validate-shfmt
   - docker build --progress=plain --build-arg=GO_VERSION --platform=linux/arm64,darwin/amd64,windows/amd64,linux/arm,linux/arm64 .
