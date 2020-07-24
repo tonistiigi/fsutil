@@ -18,10 +18,7 @@ env:
   - GO_VERSION=1.14
 
 script:
-  - docker build --progress=plain --build-arg=GO_VERSION .
-  - docker build --progress=plain --build-arg=GO_VERSION --target=test .
-  - docker build --progress=plain --build-arg=GO_VERSION --target=test-noroot .
-  - ./hack/validate-gomod
-  - ./hack/lint
-  - ./hack/validate-shfmt
-  - docker build --progress=plain --build-arg=GO_VERSION --platform=linux/arm64,darwin/amd64,windows/amd64,linux/arm,linux/arm64 .
+  - docker buildx bake 
+  - docker buildx bake test
+  - docker buildx bake lint validate-gomod validate-shfmt
+  - docker buildx bake cross

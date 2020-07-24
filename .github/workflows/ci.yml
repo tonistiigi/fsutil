@@ -36,9 +36,9 @@ jobs:
         run: |
           docker buildx bake test
       -
-        name: Validate gomod
+        name: Linters
         run: |
-          docker buildx bake validate-gomod
+          docker buildx bake lint validate-gomod validate-shfmt
       -
         name: Cross
         run: |

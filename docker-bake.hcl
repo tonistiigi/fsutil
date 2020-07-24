@@ -41,6 +41,17 @@ target "gomod" {
   target = "update"
 }
 
+target "validate-shfmt" {
+  dockerfile = "./hack/dockerfiles/shfmt.Dockerfile"
+  target = "validate"
+}
+
+target "shfmt" {
+  inherits = ["validate-shfmt"]
+  output = ["."]
+  target = "update"
+}
+
 target "cross" {
   inherits = ["build"]
   platforms = ["linux/amd64", "linux/arm64", "linux/arm", "linux/ppc64le", "linux/s390x"]
