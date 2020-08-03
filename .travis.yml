@@ -18,7 +18,7 @@ env:
   - GO_VERSION=1.14
 
 script:
-  - docker buildx bake 
-  - docker buildx bake test
-  - docker buildx bake lint validate-gomod validate-shfmt
-  - docker buildx bake cross
+  - docker buildx bake --progress=plain
+  - docker buildx bake --progress=plain test
+  - docker buildx bake --progress=plain lint validate-gomod validate-shfmt
+  - docker buildx bake --progress=plain cross
