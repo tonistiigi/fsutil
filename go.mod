@@ -9,7 +9,7 @@ require (
 	github.com/gogo/protobuf v1.3.1
 	github.com/moby/sys/mount v0.1.0 // indirect
 	github.com/moby/sys/mountinfo v0.1.3 // indirect
-	github.com/opencontainers/go-digest v1.0.0-rc1
+	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/opencontainers/runc v1.0.0-rc10 // indirect
 	github.com/pkg/errors v0.9.1
