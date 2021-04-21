@@ -149,7 +149,6 @@ func TestWalkerExclude(t *testing.T) {
 dir foo
 file foo/bar2
 `, string(b.Bytes()))
-
 }
 
 func TestWalkerFollowLinks(t *testing.T) {
@@ -232,56 +231,6 @@ func TestWalkerMap(t *testing.T) {
 file _foo/bar2
 file _foo2
 `, string(b.Bytes()))
-}
-
-func TestMatchPrefix(t *testing.T) {
-	ok, partial := matchPrefix("foo", "foo")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, false, partial)
-
-	ok, partial = matchPrefix("foo/bar/baz", "foo")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, true, partial)
-
-	ok, partial = matchPrefix("foo/bar/baz", "foo/bar")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, true, partial)
-
-	ok, partial = matchPrefix("foo/bar/baz", "foo/bax")
-	assert.Equal(t, false, ok)
-	assert.Equal(t, true, partial)
-
-	ok, partial = matchPrefix("foo/bar/baz", "foo/bar/baz")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, false, partial)
-
-	ok, partial = matchPrefix("f*", "foo")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, false, partial)
-
-	ok, partial = matchPrefix("foo/bar/*", "foo")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, true, partial)
-
-	ok, partial = matchPrefix("foo/*/baz", "foo")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, true, partial)
-
-	ok, partial = matchPrefix("*/*/baz", "foo")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, true, partial)
-
-	ok, partial = matchPrefix("*/bar/baz", "foo/bar")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, true, partial)
-
-	ok, partial = matchPrefix("*/bar/baz", "foo/bax")
-	assert.Equal(t, false, ok)
-	assert.Equal(t, true, partial)
-
-	ok, partial = matchPrefix("*/*/baz", "foo/bar/baz")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, false, partial)
 }
 
 func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
