@@ -227,6 +227,13 @@ type copier struct {
 	xattrErrorHandler     XAttrErrorHandler
 	includePatterns       []string
 	excludePatternMatcher *fileutils.PatternMatcher
+	parentDirs            []parentDir
+}
+
+type parentDir struct {
+	srcPath string
+	dstPath string
+	copied  bool
 }
 
 func newCopier(chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, includePatterns, excludePatterns []string) (*copier, error) {
@@ -411,50 +418,34 @@ func (c *copier) exclude(path string, fi os.FileInfo) (bool, error) {
 // Delayed creation of parent directories when a file or dir matches an include
 // pattern.
 func (c *copier) createParentDirs(src, srcComponents, target string, overwriteTargetMetadata bool) error {
-	if len(c.includePatterns) == 0 {
-		return nil
-	}
-
-	count := strings.Count(srcComponents, string(filepath.Separator))
-	if count != 0 {
-		srcPaths := []string{src}
-		targetPaths := []string{target}
-		for i := 0; i != count; i++ {
-			srcParentDir, _ := filepath.Split(srcPaths[len(srcPaths)-1])
-			if len(srcParentDir) > 1 {
-				srcParentDir = strings.TrimSuffix(srcParentDir, string(filepath.Separator))
-			}
-			srcPaths = append(srcPaths, srcParentDir)
-
-			targetParentDir, _ := filepath.Split(targetPaths[len(targetPaths)-1])
-			if len(targetParentDir) > 1 {
-				targetParentDir = strings.TrimSuffix(targetParentDir, string(filepath.Separator))
-			}
-			targetPaths = append(targetPaths, targetParentDir)
+	for i, parentDir := range c.parentDirs {
+		if parentDir.copied {
+			continue
 		}
-		for i := count; i > 0; i-- {
-			fi, err := os.Stat(srcPaths[i])
-			if err != nil {
-				return errors.Wrapf(err, "failed to stat %s", src)
-			}
-			if !fi.IsDir() {
-				return errors.Errorf("%s is not a directory", srcPaths[i])
+
+		fi, err := os.Stat(parentDir.srcPath)
+		if err != nil {
+			return errors.Wrapf(err, "failed to stat %s", src)
+		}
+		if !fi.IsDir() {
+			return errors.Errorf("%s is not a directory", parentDir.srcPath)
+		}
+
+		created, err := copyDirectoryOnly(parentDir.srcPath, parentDir.dstPath, fi, overwriteTargetMetadata)
+		if err != nil {
+			return err
+		}
+		if created {
+			if err := c.copyFileInfo(fi, parentDir.dstPath); err != nil {
+				return errors.Wrap(err, "failed to copy file info")
 			}
 
-			created, err := copyDirectoryOnly(srcPaths[i], targetPaths[i], fi, overwriteTargetMetadata)
-			if err != nil {
-				return err
-			}
-			if created {
-				if err := c.copyFileInfo(fi, targetPaths[i]); err != nil {
-					return errors.Wrap(err, "failed to copy file info")
-				}
-
-				if err := copyXAttrs(targetPaths[i], srcPaths[i], c.xattrErrorHandler); err != nil {
-					return errors.Wrap(err, "failed to copy xattrs")
-				}
+			if err := copyXAttrs(parentDir.dstPath, parentDir.srcPath, c.xattrErrorHandler); err != nil {
+				return errors.Wrap(err, "failed to copy xattrs")
 			}
 		}
+
+		c.parentDirs[i].copied = true
 	}
 	return nil
 }
@@ -477,6 +468,16 @@ func (c *copier) copyDirectory(ctx context.Context, src, srcComponents, dst stri
 			return created, err
 		}
 	}
+
+	c.parentDirs = append(c.parentDirs, parentDir{
+		srcPath: src,
+		dstPath: dst,
+		copied:  skipIncludePatterns,
+	})
+
+	defer func() {
+		c.parentDirs = c.parentDirs[:len(c.parentDirs)-1]
+	}()
 
 	fis, err := ioutil.ReadDir(src)
 	if err != nil {
