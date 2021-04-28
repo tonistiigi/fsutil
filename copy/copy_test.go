@@ -10,7 +10,6 @@ import (
 
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -457,6 +456,6 @@ func TestCopyIncludeExclude(t *testing.T) {
 			}
 		}
 
-		assert.Equal(t, tc.expectedResults, results, tc.name)
+		require.Equal(t, tc.expectedResults, results, tc.name)
 	}
 }
