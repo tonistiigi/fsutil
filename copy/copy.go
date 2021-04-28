@@ -362,7 +362,7 @@ func (c *copier) include(path string, fi os.FileInfo) (bool, bool, error) {
 			pattern = strings.TrimSuffix(pattern, string(filepath.Separator))
 		}
 
-		if ok, p := prefix.Match(pattern, path); ok {
+		if ok, p := prefix.Match(pattern, path, false); ok {
 			matched = true
 			if !p {
 				partial = false
