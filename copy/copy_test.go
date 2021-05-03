@@ -352,3 +352,110 @@ func testCopy(apply fstest.Applier) error {
 
 	return fstest.CheckDirectoryEqual(t1, t2)
 }
+
+func TestCopyIncludeExclude(t *testing.T) {
+	t1, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t1)
+
+	apply := fstest.Apply(
+		fstest.CreateDir("bar", 0755),
+		fstest.CreateFile("bar/foo", []byte("foo-contents"), 0755),
+		fstest.CreateDir("bar/baz", 0755),
+		fstest.CreateFile("bar/baz/foo3", []byte("foo3-contents"), 0755),
+		fstest.CreateFile("foo2", []byte("foo2-contents"), 0755),
+	)
+
+	require.NoError(t, apply.Apply(t1))
+
+	testCases := []struct {
+		name            string
+		opts            []Opt
+		expectedResults []string
+	}{
+		{
+			name:            "include bar",
+			opts:            []Opt{WithIncludePattern("bar")},
+			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
+		},
+		{
+			name:            "include *",
+			opts:            []Opt{WithIncludePattern("*")},
+			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3", "foo2"},
+		},
+		{
+			name:            "include bar/foo",
+			opts:            []Opt{WithIncludePattern("bar/foo")},
+			expectedResults: []string{"bar", "bar/foo"},
+		},
+		{
+			name:            "include bar/foo and foo*",
+			opts:            []Opt{WithIncludePattern("bar/foo"), WithIncludePattern("foo*")},
+			expectedResults: []string{"bar", "bar/foo", "foo2"},
+		},
+		{
+			name:            "include b*",
+			opts:            []Opt{WithIncludePattern("b*")},
+			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
+		},
+		{
+			name:            "include bar/f*",
+			opts:            []Opt{WithIncludePattern("bar/f*")},
+			expectedResults: []string{"bar", "bar/foo"},
+		},
+		{
+			name:            "include bar/g*",
+			opts:            []Opt{WithIncludePattern("bar/g*")},
+			expectedResults: nil,
+		},
+		{
+			name:            "include b*/f*",
+			opts:            []Opt{WithIncludePattern("b*/f*")},
+			expectedResults: []string{"bar", "bar/foo"},
+		},
+		{
+			name:            "include b*/foo",
+			opts:            []Opt{WithIncludePattern("b*/foo")},
+			expectedResults: []string{"bar", "bar/foo"},
+		},
+		{
+			name:            "include b*/",
+			opts:            []Opt{WithIncludePattern("b*/")},
+			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
+		},
+		{
+			name:            "include bar/*/foo3",
+			opts:            []Opt{WithIncludePattern("bar/*/foo3")},
+			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3"},
+		},
+		{
+			name:            "exclude bar*, !bar/baz",
+			opts:            []Opt{WithExcludePattern("bar*"), WithExcludePattern("!bar/baz")},
+			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3", "foo2"},
+		},
+		{
+			name:            "include bar, exclude bar/baz",
+			opts:            []Opt{WithIncludePattern("bar"), WithExcludePattern("bar/baz")},
+			expectedResults: []string{"bar", "bar/foo"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t2, err := ioutil.TempDir("", "test")
+		require.NoError(t, err)
+		defer os.RemoveAll(t2)
+
+		err = Copy(context.Background(), t1, "/", t2, "/", tc.opts...)
+		require.NoError(t, err)
+
+		var results []string
+		for _, path := range []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3", "foo2"} {
+			_, err := os.Stat(filepath.Join(t2, path))
+			if err == nil {
+				results = append(results, path)
+			}
+		}
+
+		require.Equal(t, tc.expectedResults, results, tc.name)
+	}
+}
