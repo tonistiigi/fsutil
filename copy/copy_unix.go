@@ -6,6 +6,7 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/tonistiigi/fsutil/device"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
@@ -57,5 +58,5 @@ func copyDevice(dst string, fi os.FileInfo) error {
 	if !ok {
 		return errors.New("unsupported stat type")
 	}
-	return unix.Mknod(dst, uint32(fi.Mode()), int(st.Rdev))
+	return device.Mknod(dst, uint32(fi.Mode()), int(st.Rdev))
 }
