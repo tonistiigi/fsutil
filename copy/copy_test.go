@@ -389,6 +389,11 @@ func TestCopyIncludeExclude(t *testing.T) {
 			expectedResults: []string{"bar", "bar/foo"},
 		},
 		{
+			name:            "include bar except bar/foo",
+			opts:            []Opt{WithIncludePattern("bar"), WithIncludePattern("!bar/foo")},
+			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3"},
+		},
+		{
 			name:            "include bar/foo and foo*",
 			opts:            []Opt{WithIncludePattern("bar/foo"), WithIncludePattern("foo*")},
 			expectedResults: []string{"bar", "bar/foo", "foo2"},
