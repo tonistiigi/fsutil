@@ -443,6 +443,16 @@ func TestCopyIncludeExclude(t *testing.T) {
 			opts:            []Opt{WithIncludePattern("bar"), WithExcludePattern("bar/baz")},
 			expectedResults: []string{"bar", "bar/foo"},
 		},
+		{
+			name:            "doublestar include",
+			opts:            []Opt{WithIncludePattern("**/foo3")},
+			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3"},
+		},
+		{
+			name:            "doublestar exclude",
+			opts:            []Opt{WithIncludePattern("bar"), WithExcludePattern("**/foo3")},
+			expectedResults: []string{"bar", "bar/foo", "bar/baz"},
+		},
 	}
 
 	for _, tc := range testCases {
