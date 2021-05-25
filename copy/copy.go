@@ -13,7 +13,6 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/pkg/errors"
-	"github.com/tonistiigi/fsutil/prefix"
 )
 
 var bufferPool = &sync.Pool{
@@ -114,7 +113,7 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		if err != nil {
 			return err
 		}
-		skipIncludePatterns := len(c.includePatterns) == 0
+		skipIncludePatterns := c.includePatternMatcher == nil
 		if err := c.copy(ctx, srcFollowed, "", dst, false, skipIncludePatterns); err != nil {
 			return err
 		}
@@ -225,7 +224,7 @@ type copier struct {
 	mode                  *int
 	inodes                map[uint64]string
 	xattrErrorHandler     XAttrErrorHandler
-	includePatterns       []string
+	includePatternMatcher *fileutils.PatternMatcher
 	excludePatternMatcher *fileutils.PatternMatcher
 	parentDirs            []parentDir
 }
@@ -243,10 +242,19 @@ func newCopier(chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, i
 		}
 	}
 
-	var pm *fileutils.PatternMatcher
+	var includePatternMatcher *fileutils.PatternMatcher
+	if len(includePatterns) != 0 {
+		var err error
+		includePatternMatcher, err = fileutils.NewPatternMatcher(includePatterns)
+		if err != nil {
+			return nil, errors.Wrapf(err, "invalid includepatterns: %s", includePatterns)
+		}
+	}
+
+	var excludePatternMatcher *fileutils.PatternMatcher
 	if len(excludePatterns) != 0 {
 		var err error
-		pm, err = fileutils.NewPatternMatcher(excludePatterns)
+		excludePatternMatcher, err = fileutils.NewPatternMatcher(excludePatterns)
 		if err != nil {
 			return nil, errors.Wrapf(err, "invalid excludepatterns: %s", excludePatterns)
 		}
@@ -258,8 +266,8 @@ func newCopier(chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, i
 		utime:                 tm,
 		xattrErrorHandler:     xeh,
 		mode:                  mode,
-		includePatterns:       includePatterns,
-		excludePatternMatcher: pm,
+		includePatternMatcher: includePatternMatcher,
+		excludePatternMatcher: excludePatternMatcher,
 	}, nil
 }
 
@@ -276,15 +284,12 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 		return errors.Wrapf(err, "failed to stat %s", src)
 	}
 
-	var include bool
+	include := true
 	if srcComponents != "" {
 		if !skipIncludePatterns {
-			include, skipIncludePatterns, err = c.include(srcComponents, fi)
+			include, err = c.include(srcComponents, fi)
 			if err != nil {
 				return err
-			}
-			if !include {
-				return nil
 			}
 		}
 		exclude, err := c.exclude(srcComponents, fi)
@@ -292,21 +297,22 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 			return err
 		}
 		if exclude {
-			return nil
+			include = false
+		}
+	}
+
+	if include {
+		if err := c.createParentDirs(src, srcComponents, target, overwriteTargetMetadata); err != nil {
+			return err
 		}
 	}
 
 	if !fi.IsDir() {
-		if include {
-			if err := c.createParentDirs(src, srcComponents, target, overwriteTargetMetadata); err != nil {
-				return err
-			}
+		if !include {
+			return nil
 		}
+
 		if err := ensureEmptyFileTarget(target); err != nil {
-			return err
-		}
-	} else if skipIncludePatterns {
-		if err := c.createParentDirs(src, srcComponents, target, overwriteTargetMetadata); err != nil {
 			return err
 		}
 	}
@@ -315,7 +321,7 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 
 	switch {
 	case fi.IsDir():
-		if created, err := c.copyDirectory(ctx, src, srcComponents, target, fi, overwriteTargetMetadata, skipIncludePatterns); err != nil {
+		if created, err := c.copyDirectory(ctx, src, srcComponents, target, fi, overwriteTargetMetadata, skipIncludePatterns, include); err != nil {
 			return err
 		} else if !overwriteTargetMetadata || !skipIncludePatterns {
 			copyFileInfo = created
@@ -361,30 +367,16 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	return nil
 }
 
-func (c *copier) include(path string, fi os.FileInfo) (bool, bool, error) {
-	matched := false
-	partial := true
-	for _, pattern := range c.includePatterns {
-		if fi.IsDir() {
-			pattern = strings.TrimSuffix(pattern, string(filepath.Separator))
-		}
-
-		if ok, p := prefix.Match(pattern, path, false); ok {
-			matched = true
-			if !p {
-				partial = false
-				break
-			}
-		}
+func (c *copier) include(path string, fi os.FileInfo) (bool, error) {
+	if c.includePatternMatcher == nil {
+		return false, nil
 	}
 
-	if !matched {
-		return false, false, nil
+	m, err := c.includePatternMatcher.Matches(path)
+	if err != nil {
+		return false, errors.Wrap(err, "failed to match includepatterns")
 	}
-	if fi.IsDir() {
-		return true, !partial, nil
-	}
-	return !partial, !partial, nil
+	return m, nil
 }
 
 func (c *copier) exclude(path string, fi os.FileInfo) (bool, error) {
@@ -396,23 +388,7 @@ func (c *copier) exclude(path string, fi os.FileInfo) (bool, error) {
 	if err != nil {
 		return false, errors.Wrap(err, "failed to match excludepatterns")
 	}
-	if !m {
-		return false, nil
-	}
-
-	if fi.IsDir() && c.excludePatternMatcher.Exclusions() {
-		dirSlash := path + string(filepath.Separator)
-		for _, pat := range c.excludePatternMatcher.Patterns() {
-			if !pat.Exclusion() {
-				continue
-			}
-			patStr := pat.String() + string(filepath.Separator)
-			if strings.HasPrefix(patStr, dirSlash) {
-				return false, nil
-			}
-		}
-	}
-	return true, nil
+	return m, nil
 }
 
 // Delayed creation of parent directories when a file or dir matches an include
@@ -450,7 +426,7 @@ func (c *copier) createParentDirs(src, srcComponents, target string, overwriteTa
 	return nil
 }
 
-func (c *copier) copyDirectory(ctx context.Context, src, srcComponents, dst string, stat os.FileInfo, overwriteTargetMetadata, skipIncludePatterns bool) (bool, error) {
+func (c *copier) copyDirectory(ctx context.Context, src, srcComponents, dst string, stat os.FileInfo, overwriteTargetMetadata, skipIncludePatterns, matchedExactly bool) (bool, error) {
 	if !stat.IsDir() {
 		return false, errors.Errorf("source is not directory")
 	}
@@ -461,7 +437,7 @@ func (c *copier) copyDirectory(ctx context.Context, src, srcComponents, dst stri
 	// pattern exactly, go ahead and create the directory. Otherwise, delay to
 	// handle include patterns like a/*/c where we do not want to create a/b
 	// until we encounter a/b/c.
-	if skipIncludePatterns {
+	if matchedExactly || skipIncludePatterns {
 		var err error
 		created, err = copyDirectoryOnly(src, dst, stat, overwriteTargetMetadata)
 		if err != nil {
