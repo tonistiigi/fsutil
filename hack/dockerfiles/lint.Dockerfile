@@ -1,6 +1,7 @@
-# syntax=docker/dockerfile:1.1-experimental
+# syntax=docker/dockerfile:1.2
+ARG GO_VERSION=1.16
 
-FROM golang:1.13-alpine
+FROM golang:${GO_VERSION}-alpine
 RUN apk add --no-cache gcc musl-dev
 RUN wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v1.27.0
 WORKDIR /go/src/github.com/tonistiigi/fsutil

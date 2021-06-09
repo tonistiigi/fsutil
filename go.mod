@@ -4,8 +4,8 @@ go 1.13
 
 require (
 	github.com/Microsoft/hcsshim v0.8.15 // indirect
-	github.com/containerd/continuity v0.0.0-20210313171317-968621f0704d
-	github.com/docker/docker v20.10.5+incompatible
+	github.com/containerd/continuity v0.1.0
+	github.com/docker/docker v20.10.3-0.20210609071616-4c2ec79bf2a8+incompatible // master (v21.xx-dev)
 	github.com/gogo/protobuf v1.3.2
 	github.com/moby/sys/mount v0.2.0 // indirect
 	github.com/moby/sys/mountinfo v0.4.1 // indirect
