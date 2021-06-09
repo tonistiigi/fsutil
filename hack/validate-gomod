@@ -17,7 +17,7 @@ case ${1:-} in
     docker build $progressFlag $cacheOnlyFlag -f ./hack/dockerfiles/gomod.Dockerfile --target validate . || exit 1
     ;;
   check)
-    status="$(git status --porcelain -- go.mod go.sum 2>/dev/null)"
+    status="$(git status --porcelain -- go.mod go.sum bench/go.mod bench/go.sum 2>/dev/null)"
     diffs=$(echo "$status" | grep -v '^[RAD] ' || true)
     if [ "$diffs" ]; then
       {

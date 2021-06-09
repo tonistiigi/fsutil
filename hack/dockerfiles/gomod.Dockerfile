@@ -7,7 +7,9 @@ WORKDIR /src
 RUN --mount=target=/src,rw \
   --mount=target=/go/pkg/mod,type=cache \
   go mod tidy && go mod vendor && \
-  mkdir /out && cp -r go.mod go.sum /out
+  mkdir /out && cp -r go.mod go.sum /out && \
+  cd bench && go mod tidy && \
+  mkdir /out/bench && cp -r go.mod go.sum /out/bench
 
 FROM scratch AS update
 COPY --from=gomod /out /
