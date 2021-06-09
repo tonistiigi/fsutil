@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/fs"
-	"github.com/docker/docker/pkg/fileutils"
 	"github.com/pkg/errors"
+	"github.com/tonistiigi/fsutil/filematch"
 )
 
 var bufferPool = &sync.Pool{
@@ -224,8 +224,8 @@ type copier struct {
 	mode                  *int
 	inodes                map[uint64]string
 	xattrErrorHandler     XAttrErrorHandler
-	includePatternMatcher *fileutils.PatternMatcher
-	excludePatternMatcher *fileutils.PatternMatcher
+	includePatternMatcher *filematch.PatternMatcher
+	excludePatternMatcher *filematch.PatternMatcher
 	parentDirs            []parentDir
 }
 
@@ -242,19 +242,19 @@ func newCopier(chown Chowner, tm *time.Time, mode *int, xeh XAttrErrorHandler, i
 		}
 	}
 
-	var includePatternMatcher *fileutils.PatternMatcher
+	var includePatternMatcher *filematch.PatternMatcher
 	if len(includePatterns) != 0 {
 		var err error
-		includePatternMatcher, err = fileutils.NewPatternMatcher(includePatterns)
+		includePatternMatcher, err = filematch.NewPatternMatcher(includePatterns)
 		if err != nil {
 			return nil, errors.Wrapf(err, "invalid includepatterns: %s", includePatterns)
 		}
 	}
 
-	var excludePatternMatcher *fileutils.PatternMatcher
+	var excludePatternMatcher *filematch.PatternMatcher
 	if len(excludePatterns) != 0 {
 		var err error
-		excludePatternMatcher, err = fileutils.NewPatternMatcher(excludePatterns)
+		excludePatternMatcher, err = filematch.NewPatternMatcher(excludePatterns)
 		if err != nil {
 			return nil, errors.Wrapf(err, "invalid excludepatterns: %s", excludePatterns)
 		}

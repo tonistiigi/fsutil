@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/docker/docker/pkg/fileutils"
 	"github.com/pkg/errors"
+	"github.com/tonistiigi/fsutil/filematch"
 	"github.com/tonistiigi/fsutil/prefix"
 	"github.com/tonistiigi/fsutil/types"
 )
@@ -36,9 +36,9 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		return errors.WithStack(&os.PathError{Op: "walk", Path: root, Err: syscall.ENOTDIR})
 	}
 
-	var pm *fileutils.PatternMatcher
+	var pm *filematch.PatternMatcher
 	if opt != nil && opt.ExcludePatterns != nil {
-		pm, err = fileutils.NewPatternMatcher(opt.ExcludePatterns)
+		pm, err = filematch.NewPatternMatcher(opt.ExcludePatterns)
 		if err != nil {
 			return errors.Wrapf(err, "invalid excludepatterns: %s", opt.ExcludePatterns)
 		}
