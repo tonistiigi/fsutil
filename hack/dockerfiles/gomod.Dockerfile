@@ -1,5 +1,7 @@
 # syntax = docker/dockerfile:1.2
-FROM golang:1.13-alpine AS gomod
+ARG GO_VERSION=1.13
+
+FROM golang:${GO_VERSION}-alpine AS gomod
 RUN  apk add --no-cache git
 WORKDIR /src
 RUN --mount=target=/src,rw \
