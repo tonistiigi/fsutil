@@ -6,9 +6,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	"gotest.tools/v3/assert"
-	is "gotest.tools/v3/assert/cmp"
 )
 
 func TestWildcardMatches(t *testing.T) {
@@ -183,9 +180,13 @@ func TestMatches(t *testing.T) {
 	for _, test := range tests {
 		desc := fmt.Sprintf("pattern=%q text=%q", test.pattern, test.text)
 		pm, err := NewPatternMatcher([]string{test.pattern})
-		assert.NilError(t, err, desc)
+		if err != nil {
+			t.Fatal(err)
+		}
 		res, _ := pm.Matches(test.text)
-		assert.Check(t, is.Equal(test.pass, res), desc)
+		if res != test.pass {
+			t.Fatalf("expected %v, got %v for %s", test.pass, res, desc)
+		}
 	}
 }
 

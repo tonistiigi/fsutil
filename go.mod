@@ -15,5 +15,4 @@ require (
 	golang.org/x/sys v0.0.0-20210313202042-bd2e13477e9c
 	google.golang.org/protobuf v1.25.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
-	gotest.tools/v3 v3.0.3
 )
