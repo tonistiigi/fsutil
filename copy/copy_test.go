@@ -449,6 +449,16 @@ func TestCopyIncludeExclude(t *testing.T) {
 			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3"},
 		},
 		{
+			name:            "doublestar matching second item in path",
+			opts:            []Opt{WithIncludePattern("**/baz")},
+			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3"},
+		},
+		{
+			name:            "doublestar matching first item in path",
+			opts:            []Opt{WithIncludePattern("**/bar")},
+			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
+		},
+		{
 			name:            "doublestar exclude",
 			opts:            []Opt{WithIncludePattern("bar"), WithExcludePattern("**/foo3")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz"},
@@ -461,10 +471,10 @@ func TestCopyIncludeExclude(t *testing.T) {
 		defer os.RemoveAll(t2)
 
 		err = Copy(context.Background(), t1, "/", t2, "/", tc.opts...)
-		require.NoError(t, err)
+		require.NoError(t, err, tc.name)
 
 		var results []string
-		for _, path := range []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3", "foo2"} {
+		for _, path := range []string{"bar", "bar/foo", "bar/baz", "bar/baz/asdf", "bar/baz/asdf/x", "bar/baz/foo3", "foo2"} {
 			_, err := os.Stat(filepath.Join(t2, path))
 			if err == nil {
 				results = append(results, path)
