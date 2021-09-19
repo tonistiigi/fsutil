@@ -455,6 +455,9 @@ func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 	h := sha256.New()
 	ss := *s
 	ss.ModTime = 0
+	// Unlike Linux, on FreeBSD's stat() call returns -1 in st_rdev for regular files
+	ss.Devminor = 0
+	ss.Devmajor = 0
 
 	if os.FileMode(ss.Mode)&os.ModeSymlink != 0 {
 		ss.Mode = ss.Mode | 0777
