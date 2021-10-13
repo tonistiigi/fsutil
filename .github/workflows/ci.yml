@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        GO_VERSION: ["1.13", "1.14", "1.15", "1.16"]
+        GO_VERSION: ["1.16", "1.17"]
     env:
       GO_VERSION: ${{ matrix.GO_VERSION }}
     steps:
@@ -40,6 +40,36 @@ jobs:
         name: Cross
         run: |
           docker buildx bake cross
+
+  test-macos:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go:
+          - 1.16
+          - 1.17
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v2
+      -
+        name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
+      -
+        name: Cache Go modules
+        uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ matrix.go }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ matrix.go }}-
+      -
+        name: Test
+        run: |
+          go test ./...
 
   test-freebsd-amd64:
     runs-on: macos-latest
