@@ -3,14 +3,18 @@ package fs
 import (
 	"context"
 	_ "crypto/sha256"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"github.com/tonistiigi/fsutil"
 )
 
 // TODO: Create copy directory which requires privilege
@@ -29,7 +33,9 @@ func TestCopyDirectory(t *testing.T) {
 		fstest.CreateDir("/home", 0755),
 	)
 
-	if err := testCopy(apply); err != nil {
+	exp := "add:/etc,add:/etc/hosts,add:/etc/hosts.allow,add:/home,add:/usr,add:/usr/local,add:/usr/local/lib,add:/usr/local/lib/libnothing.so,add:/usr/local/lib/libnothing.so.2"
+
+	if err := testCopy(apply, exp); err != nil {
 		t.Fatalf("Copy test failed: %+v", err)
 	}
 }
@@ -43,7 +49,9 @@ func TestCopyDirectoryWithLocalSymlink(t *testing.T) {
 		fstest.Symlink("nothing.txt", "link-no-nothing.txt"),
 	)
 
-	if err := testCopy(apply); err != nil {
+	exp := "add:/link-no-nothing.txt,add:/nothing.txt"
+
+	if err := testCopy(apply, exp); err != nil {
 		t.Fatalf("Copy test failed: %+v", err)
 	}
 }
@@ -110,6 +118,16 @@ func TestCopySingleFile(t *testing.T) {
 
 	_, err = os.Stat(filepath.Join(t4, "foo2.txt"))
 	require.NoError(t, err)
+
+	ch := &changeCollector{}
+
+	err = Copy(context.TODO(), t1, "foo.txt", t4, "a/b/c/foo2.txt", WithChangeNotifier(ch.onChange))
+	require.NoError(t, err)
+
+	_, err = os.Stat(filepath.Join(t4, "a/b/c/foo2.txt"))
+	require.NoError(t, err)
+
+	require.Equal(t, "add:/a/b/c/foo2.txt", ch.String())
 }
 
 func TestCopyOverrideFile(t *testing.T) {
@@ -162,16 +180,24 @@ func TestCopyDirectoryBasename(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(t2)
 
-	err = Copy(context.TODO(), t1, "foo", t2, "foo")
+	ch := &changeCollector{}
+
+	err = Copy(context.TODO(), t1, "foo", t2, "foo", WithChangeNotifier(ch.onChange))
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
 
+	require.Equal(t, "add:/foo,add:/foo/bar,add:/foo/bar/baz.txt", ch.String())
+
+	ch = &changeCollector{}
 	err = Copy(context.TODO(), t1, "foo", t2, "foo", WithCopyInfo(CopyInfo{
 		CopyDirContents: true,
+		ChangeFunc:      ch.onChange,
 	}))
 	require.NoError(t, err)
+
+	require.Equal(t, "add:/foo/bar,add:/foo/bar/baz.txt", ch.String())
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
@@ -329,7 +355,7 @@ func TestCopySymlinks(t *testing.T) {
 	require.Equal(t, "foo.txt", link)
 }
 
-func testCopy(apply fstest.Applier) error {
+func testCopy(apply fstest.Applier, exp string) error {
 	t1, err := ioutil.TempDir("", "test-copy-src-")
 	if err != nil {
 		return errors.Wrap(err, "failed to create temporary directory")
@@ -346,8 +372,13 @@ func testCopy(apply fstest.Applier) error {
 		return errors.Wrap(err, "failed to apply changes")
 	}
 
-	if err := Copy(context.TODO(), t1, "/.", t2, "/"); err != nil {
+	ch := &changeCollector{}
+	if err := Copy(context.TODO(), t1, "/.", t2, "/", WithChangeNotifier(ch.onChange)); err != nil {
 		return errors.Wrap(err, "failed to copy")
+	}
+
+	if exp != ch.String() {
+		return errors.Errorf("unexpected changes: %s", ch)
 	}
 
 	return fstest.CheckDirectoryEqual(t1, t2)
@@ -372,36 +403,43 @@ func TestCopyIncludeExclude(t *testing.T) {
 		name            string
 		opts            []Opt
 		expectedResults []string
+		expectedChanges string
 	}{
 		{
 			name:            "include bar",
 			opts:            []Opt{WithIncludePattern("bar")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
+			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo",
 		},
 		{
 			name:            "include *",
 			opts:            []Opt{WithIncludePattern("*")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3", "foo2"},
+			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo,add:/foo2",
 		},
 		{
 			name:            "include bar/foo",
 			opts:            []Opt{WithIncludePattern("bar/foo")},
 			expectedResults: []string{"bar", "bar/foo"},
+			expectedChanges: "add:/bar/foo",
 		},
 		{
 			name:            "include bar except bar/foo",
 			opts:            []Opt{WithIncludePattern("bar"), WithIncludePattern("!bar/foo")},
 			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3"},
+			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3",
 		},
 		{
 			name:            "include bar/foo and foo*",
 			opts:            []Opt{WithIncludePattern("bar/foo"), WithIncludePattern("foo*")},
 			expectedResults: []string{"bar", "bar/foo", "foo2"},
+			expectedChanges: "add:/bar/foo,add:/foo2",
 		},
 		{
 			name:            "include b*",
 			opts:            []Opt{WithIncludePattern("b*")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
+			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo",
 		},
 		{
 			name:            "include bar/f*",
@@ -452,35 +490,61 @@ func TestCopyIncludeExclude(t *testing.T) {
 			name:            "doublestar matching second item in path",
 			opts:            []Opt{WithIncludePattern("**/baz")},
 			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3"},
+			expectedChanges: "add:/bar/baz,add:/bar/baz/foo3",
 		},
 		{
 			name:            "doublestar matching first item in path",
 			opts:            []Opt{WithIncludePattern("**/bar")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
+			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo",
 		},
 		{
 			name:            "doublestar exclude",
 			opts:            []Opt{WithIncludePattern("bar"), WithExcludePattern("**/foo3")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz"},
+			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/foo",
 		},
 	}
 
 	for _, tc := range testCases {
-		t2, err := ioutil.TempDir("", "test")
-		require.NoError(t, err)
-		defer os.RemoveAll(t2)
+		t.Run(tc.name, func(t *testing.T) {
+			t2, err := ioutil.TempDir("", "test")
+			require.NoError(t, err)
+			defer os.RemoveAll(t2)
 
-		err = Copy(context.Background(), t1, "/", t2, "/", tc.opts...)
-		require.NoError(t, err, tc.name)
+			ch := &changeCollector{}
+			tc.opts = append(tc.opts, WithChangeNotifier(ch.onChange))
 
-		var results []string
-		for _, path := range []string{"bar", "bar/foo", "bar/baz", "bar/baz/asdf", "bar/baz/asdf/x", "bar/baz/foo3", "foo2"} {
-			_, err := os.Stat(filepath.Join(t2, path))
-			if err == nil {
-				results = append(results, path)
+			err = Copy(context.Background(), t1, "/", t2, "/", tc.opts...)
+			require.NoError(t, err, tc.name)
+
+			var results []string
+			for _, path := range []string{"bar", "bar/foo", "bar/baz", "bar/baz/asdf", "bar/baz/asdf/x", "bar/baz/foo3", "foo2"} {
+				_, err := os.Stat(filepath.Join(t2, path))
+				if err == nil {
+					results = append(results, path)
+				}
 			}
-		}
 
-		require.Equal(t, tc.expectedResults, results, tc.name)
+			require.Equal(t, tc.expectedResults, results, tc.name)
+
+			if tc.expectedChanges != "" {
+				require.Equal(t, tc.expectedChanges, ch.String())
+			}
+		})
 	}
+}
+
+type changeCollector struct {
+	changes []string
+}
+
+func (c *changeCollector) onChange(kind fsutil.ChangeKind, path string, _ os.FileInfo, _ error) error {
+	c.changes = append(c.changes, fmt.Sprintf("%s:%s", kind, path))
+	return nil
+}
+
+func (c *changeCollector) String() string {
+	sort.Strings(c.changes)
+	return strings.Join(c.changes, ",")
 }
