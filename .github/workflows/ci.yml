@@ -1,6 +1,8 @@
 name: ci
 
 on:
+  schedule:
+    - cron: '0 8 */6 * *' # every 6 days
   push:
     branches:
       - master
@@ -76,15 +78,20 @@ jobs:
     env:
       VAGRANT_VAGRANTFILE: hack/Vagrantfile.freebsd13
     steps:
-      - name: Cache Vagrant boxes
+      -
+        name: Checkout
+        uses: actions/checkout@v2
+      -
+        name: Cache Vagrant boxes
         uses: actions/cache@v2
         with:
           path: ~/.vagrant.d/boxes
           key: ${{ runner.os }}-vagrant-${{ hashFiles('hack/Vagrantfile.freebsd13') }}
           restore-keys: |
             ${{ runner.os }}-vagrant-
-      - uses: actions/checkout@v2
-      - name: Set up vagrant
+      -
+        name: Set up vagrant
         run: vagrant up
-      - name: "Run unit tests"
+      -
+        name: Test
         run: vagrant ssh -- "cd /vagrant; go test ./..."
