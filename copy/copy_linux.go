@@ -100,6 +100,7 @@ func copyFileContent(dst, src *os.File) error {
 			if err != nil {
 				return errors.Wrap(err, "userspace copy failed")
 			}
+			return nil
 		}
 
 		first = false
