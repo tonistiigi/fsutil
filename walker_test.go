@@ -8,11 +8,13 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tonistiigi/fsutil/types"
 )
 
@@ -229,6 +231,65 @@ func TestWalkerMap(t *testing.T) {
 	assert.Equal(t, `dir _foo
 file _foo/bar2
 file _foo2
+`, string(b.Bytes()))
+}
+
+func TestWalkerPermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("os.Chmod not fully supported on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("test cannot run as root")
+	}
+
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/bar dir",
+	}))
+	assert.NoError(t, err)
+	err = os.Chmod(filepath.Join(d, "foo", "bar"), 0000)
+	require.NoError(t, err)
+	defer func() {
+		os.Chmod(filepath.Join(d, "bar"), 0700)
+		os.RemoveAll(d)
+	}()
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &WalkOpt{}, bufWalk(b))
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "permission denied")
+	}
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		ExcludePatterns: []string{"**/bar"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+	assert.Equal(t, `dir foo
+`, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		ExcludePatterns: []string{"**/bar", "!foo/bar/baz"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+	assert.Equal(t, `dir foo
+`, string(b.Bytes()))
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		ExcludePatterns: []string{"**/bar", "!foo/bar"},
+	}, bufWalk(b))
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "permission denied")
+	}
+
+	b.Reset()
+	err = Walk(context.Background(), d, &WalkOpt{
+		IncludePatterns: []string{"foo", "!**/bar"},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+	assert.Equal(t, `dir foo
 `, string(b.Bytes()))
 }
 

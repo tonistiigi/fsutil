@@ -83,15 +83,12 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 	var parentDirs []visitedDir
 
 	seenFiles := make(map[uint64]string)
-	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) (retErr error) {
+	return filepath.Walk(root, func(path string, fi os.FileInfo, walkErr error) (retErr error) {
 		defer func() {
 			if retErr != nil && isNotExist(retErr) {
 				retErr = filepath.SkipDir
 			}
 		}()
-		if err != nil {
-			return err
-		}
 
 		origpath := path
 		path, err = filepath.Rel(root, path)
@@ -165,6 +162,13 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 				}
 				skip = true
 			}
+		}
+
+		if walkErr != nil {
+			if skip && errors.Is(walkErr, os.ErrPermission) {
+				return nil
+			}
+			return walkErr
 		}
 
 		if includeMatcher != nil || excludeMatcher != nil {
