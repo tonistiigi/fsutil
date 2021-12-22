@@ -62,12 +62,7 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 	}
 
-	var (
-		lastIncludedDir string
-
-		parentDirs           []string // used only for exclude handling
-		parentMatchedExclude []bool
-	)
+	var lastIncludedDir string
 
 	seenFiles := make(map[uint64]string)
 	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) (retErr error) {
@@ -123,30 +118,9 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 				}
 			}
 			if pm != nil {
-				for len(parentMatchedExclude) != 0 {
-					lastParentDir := parentDirs[len(parentDirs)-1]
-					if strings.HasPrefix(path, lastParentDir) {
-						break
-					}
-					parentDirs = parentDirs[:len(parentDirs)-1]
-					parentMatchedExclude = parentMatchedExclude[:len(parentMatchedExclude)-1]
-				}
-
-				var m bool
-				if len(parentMatchedExclude) != 0 {
-					m, err = pm.MatchesUsingParentResult(path, parentMatchedExclude[len(parentMatchedExclude)-1])
-				} else {
-					m, err = pm.MatchesOrParentMatches(path)
-				}
+				m, err := pm.Matches(path)
 				if err != nil {
 					return errors.Wrap(err, "failed to match excludepatterns")
-				}
-
-				var dirSlash string
-				if fi.IsDir() {
-					dirSlash = path + string(filepath.Separator)
-					parentDirs = append(parentDirs, dirSlash)
-					parentMatchedExclude = append(parentMatchedExclude, m)
 				}
 
 				if m {
@@ -154,6 +128,7 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 						if !pm.Exclusions() {
 							return filepath.SkipDir
 						}
+						dirSlash := path + string(filepath.Separator)
 						for _, pat := range pm.Patterns() {
 							if !pat.Exclusion() {
 								continue
