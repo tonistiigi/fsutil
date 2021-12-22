@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/pkg/errors"
+	"github.com/tonistiigi/fsutil/prefix"
 	"github.com/tonistiigi/fsutil/types"
 )
 
@@ -35,15 +36,20 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		return errors.WithStack(&os.PathError{Op: "walk", Path: root, Err: syscall.ENOTDIR})
 	}
 
-	var (
-		includePatterns []string
-		includeMatcher  *fileutils.PatternMatcher
-		excludeMatcher  *fileutils.PatternMatcher
-	)
+	var pm *fileutils.PatternMatcher
+	if opt != nil && opt.ExcludePatterns != nil {
+		pm, err = fileutils.NewPatternMatcher(opt.ExcludePatterns)
+		if err != nil {
+			return errors.Wrapf(err, "invalid excludepatterns: %s", opt.ExcludePatterns)
+		}
+	}
 
+	var includePatterns []string
 	if opt != nil && opt.IncludePatterns != nil {
 		includePatterns = make([]string, len(opt.IncludePatterns))
-		copy(includePatterns, opt.IncludePatterns)
+		for k := range opt.IncludePatterns {
+			includePatterns[k] = filepath.Clean(opt.IncludePatterns[k])
+		}
 	}
 	if opt != nil && opt.FollowPaths != nil {
 		targets, err := FollowLinks(p, opt.FollowPaths)
@@ -55,32 +61,13 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 			includePatterns = dedupePaths(includePatterns)
 		}
 	}
-	if len(includePatterns) != 0 {
-		includeMatcher, err = fileutils.NewPatternMatcher(includePatterns)
-		if err != nil {
-			return errors.Wrapf(err, "invalid includepatterns: %s", opt.IncludePatterns)
-		}
-	}
 
-	if opt != nil && opt.ExcludePatterns != nil {
-		excludeMatcher, err = fileutils.NewPatternMatcher(opt.ExcludePatterns)
-		if err != nil {
-			return errors.Wrapf(err, "invalid excludepatterns: %s", opt.ExcludePatterns)
-		}
-	}
+	var (
+		lastIncludedDir string
 
-	type visitedDir struct {
-		fi             os.FileInfo
-		path           string
-		origpath       string
-		pathWithSep    string
-		matchedInclude bool
-		matchedExclude bool
-		calledFn       bool
-	}
-
-	// used only for include/exclude handling
-	var parentDirs []visitedDir
+		parentDirs           []string // used only for exclude handling
+		parentMatchedExclude []bool
+	)
 
 	seenFiles := make(map[uint64]string)
 	return filepath.Walk(root, func(path string, fi os.FileInfo, err error) (retErr error) {
@@ -103,84 +90,87 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 			return nil
 		}
 
-		var dir visitedDir
-
-		if includeMatcher != nil || excludeMatcher != nil {
-			for len(parentDirs) != 0 {
-				lastParentDir := parentDirs[len(parentDirs)-1].pathWithSep
-				if strings.HasPrefix(path, lastParentDir) {
-					break
+		if opt != nil {
+			if includePatterns != nil {
+				skip := false
+				if lastIncludedDir != "" {
+					if strings.HasPrefix(path, lastIncludedDir+string(filepath.Separator)) {
+						skip = true
+					}
 				}
-				parentDirs = parentDirs[:len(parentDirs)-1]
-			}
 
-			if fi.IsDir() {
-				dir = visitedDir{
-					fi:          fi,
-					path:        path,
-					origpath:    origpath,
-					pathWithSep: path + string(filepath.Separator),
+				if !skip {
+					matched := false
+					partial := true
+					for _, pattern := range includePatterns {
+						if ok, p := prefix.Match(pattern, path, false); ok {
+							matched = true
+							if !p {
+								partial = false
+								break
+							}
+						}
+					}
+					if !matched {
+						if fi.IsDir() {
+							return filepath.SkipDir
+						}
+						return nil
+					}
+					if !partial && fi.IsDir() {
+						lastIncludedDir = path
+					}
 				}
 			}
-		}
-
-		skip := false
-
-		if includeMatcher != nil {
-			var parentMatchedInclude *bool
-			if len(parentDirs) != 0 {
-				parentMatchedInclude = &parentDirs[len(parentDirs)-1].matchedInclude
-			}
-			m, err := matchesPatterns(includeMatcher, path, parentMatchedInclude)
-			if err != nil {
-				return errors.Wrap(err, "failed to match includepatterns")
-			}
-
-			if fi.IsDir() {
-				dir.matchedInclude = m
-			}
-
-			if !m {
-				skip = true
-			}
-		}
-
-		if excludeMatcher != nil {
-			var parentMatchedExclude *bool
-			if len(parentDirs) != 0 {
-				parentMatchedExclude = &parentDirs[len(parentDirs)-1].matchedExclude
-			}
-			m, err := matchesPatterns(excludeMatcher, path, parentMatchedExclude)
-			if err != nil {
-				return errors.Wrap(err, "failed to match excludepatterns")
-			}
-
-			if fi.IsDir() {
-				dir.matchedExclude = m
-			}
-
-			if m {
-				if fi.IsDir() && !excludeMatcher.Exclusions() {
-					return filepath.SkipDir
+			if pm != nil {
+				for len(parentMatchedExclude) != 0 {
+					lastParentDir := parentDirs[len(parentDirs)-1]
+					if strings.HasPrefix(path, lastParentDir) {
+						break
+					}
+					parentDirs = parentDirs[:len(parentDirs)-1]
+					parentMatchedExclude = parentMatchedExclude[:len(parentMatchedExclude)-1]
 				}
-				skip = true
-			}
-		}
 
-		if includeMatcher != nil || excludeMatcher != nil {
-			defer func() {
+				var m bool
+				if len(parentMatchedExclude) != 0 {
+					m, err = pm.MatchesUsingParentResult(path, parentMatchedExclude[len(parentMatchedExclude)-1])
+				} else {
+					m, err = pm.MatchesOrParentMatches(path)
+				}
+				if err != nil {
+					return errors.Wrap(err, "failed to match excludepatterns")
+				}
+
+				var dirSlash string
 				if fi.IsDir() {
-					parentDirs = append(parentDirs, dir)
+					dirSlash = path + string(filepath.Separator)
+					parentDirs = append(parentDirs, dirSlash)
+					parentMatchedExclude = append(parentMatchedExclude, m)
 				}
-			}()
+
+				if m {
+					if fi.IsDir() {
+						if !pm.Exclusions() {
+							return filepath.SkipDir
+						}
+						for _, pat := range pm.Patterns() {
+							if !pat.Exclusion() {
+								continue
+							}
+							patStr := pat.String() + string(filepath.Separator)
+							if strings.HasPrefix(patStr, dirSlash) {
+								goto passedFilter
+							}
+						}
+						return filepath.SkipDir
+					}
+					return nil
+				}
+			}
 		}
 
-		if skip {
-			return nil
-		}
-
-		dir.calledFn = true
-
+	passedFilter:
 		stat, err := mkstat(origpath, path, fi, seenFiles)
 		if err != nil {
 			return err
@@ -195,54 +185,12 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 					return nil
 				}
 			}
-			for i, parentDir := range parentDirs {
-				if parentDir.calledFn {
-					continue
-				}
-				parentStat, err := mkstat(parentDir.origpath, parentDir.path, parentDir.fi, seenFiles)
-				if err != nil {
-					return err
-				}
-
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-				}
-				if opt != nil && opt.Map != nil {
-					if allowed := opt.Map(parentStat.Path, parentStat); !allowed {
-						continue
-					}
-				}
-
-				if err := fn(parentStat.Path, &StatInfo{parentStat}, nil); err != nil {
-					return err
-				}
-				parentDirs[i].calledFn = true
-			}
 			if err := fn(stat.Path, &StatInfo{stat}, nil); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
-}
-
-func matchesPatterns(pm *fileutils.PatternMatcher, path string, parentMatched *bool) (bool, error) {
-	var (
-		m   bool
-		err error
-	)
-	if parentMatched != nil {
-		m, err = pm.MatchesUsingParentResult(path, *parentMatched)
-	} else {
-		m, err = pm.MatchesOrParentMatches(path)
-	}
-	if err != nil {
-		return false, err
-	}
-
-	return m, nil
 }
 
 type StatInfo struct {
