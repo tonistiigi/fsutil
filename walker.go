@@ -70,13 +70,13 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 	}
 
 	type visitedDir struct {
-		fi               os.FileInfo
-		path             string
-		origpath         string
-		pathWithSep      string
-		includeMatchInfo fileutils.MatchInfo
-		excludeMatchInfo fileutils.MatchInfo
-		calledFn         bool
+		fi             os.FileInfo
+		path           string
+		origpath       string
+		pathWithSep    string
+		matchedInclude bool
+		matchedExclude bool
+		calledFn       bool
 	}
 
 	// used only for include/exclude handling
@@ -127,17 +127,17 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		skip := false
 
 		if includeMatcher != nil {
-			var parentIncludeMatchInfo fileutils.MatchInfo
+			var parentMatchedInclude *bool
 			if len(parentDirs) != 0 {
-				parentIncludeMatchInfo = parentDirs[len(parentDirs)-1].includeMatchInfo
+				parentMatchedInclude = &parentDirs[len(parentDirs)-1].matchedInclude
 			}
-			m, matchInfo, err := includeMatcher.MatchesUsingParentResults(path, parentIncludeMatchInfo)
+			m, err := matchesPatterns(includeMatcher, path, parentMatchedInclude)
 			if err != nil {
 				return errors.Wrap(err, "failed to match includepatterns")
 			}
 
 			if fi.IsDir() {
-				dir.includeMatchInfo = matchInfo
+				dir.matchedInclude = m
 			}
 
 			if !m {
@@ -146,17 +146,17 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 
 		if excludeMatcher != nil {
-			var parentExcludeMatchInfo fileutils.MatchInfo
+			var parentMatchedExclude *bool
 			if len(parentDirs) != 0 {
-				parentExcludeMatchInfo = parentDirs[len(parentDirs)-1].excludeMatchInfo
+				parentMatchedExclude = &parentDirs[len(parentDirs)-1].matchedExclude
 			}
-			m, matchInfo, err := excludeMatcher.MatchesUsingParentResults(path, parentExcludeMatchInfo)
+			m, err := matchesPatterns(excludeMatcher, path, parentMatchedExclude)
 			if err != nil {
 				return errors.Wrap(err, "failed to match excludepatterns")
 			}
 
 			if fi.IsDir() {
-				dir.excludeMatchInfo = matchInfo
+				dir.matchedExclude = m
 			}
 
 			if m {
@@ -226,6 +226,23 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 		}
 		return nil
 	})
+}
+
+func matchesPatterns(pm *fileutils.PatternMatcher, path string, parentMatched *bool) (bool, error) {
+	var (
+		m   bool
+		err error
+	)
+	if parentMatched != nil {
+		m, err = pm.MatchesUsingParentResult(path, *parentMatched)
+	} else {
+		m, err = pm.MatchesOrParentMatches(path)
+	}
+	if err != nil {
+		return false, err
+	}
+
+	return m, nil
 }
 
 type StatInfo struct {
