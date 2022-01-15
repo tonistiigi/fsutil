@@ -291,6 +291,9 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 
 func patternWithoutTrailingGlob(p *fileutils.Pattern) string {
 	patStr := p.String()
+	// We use filepath.Separator here because fileutils.Pattern patterns
+	// get transformed to use the native path separator:
+	// https://github.com/moby/moby/blob/79651b7a979b40e26af353ad283ca7ea5d67a855/pkg/fileutils/fileutils.go#L54
 	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"**")
 	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
 	return patStr
