@@ -10,14 +10,13 @@ WORKDIR /src
 
 FROM base AS build
 ARG TARGETPLATFORM
-RUN --mount=target=. \
+RUN --mount=target=. --mount=target=/go/pkg/mod,type=cache \
     --mount=target=/root/.cache,type=cache \
     go build ./...
 
 FROM base AS test
-RUN --mount=target=. \
+RUN --mount=target=. --mount=target=/go/pkg/mod,type=cache \
     --mount=target=/root/.cache,type=cache \
-    go test -test.v ./...
 
 FROM base AS test-noroot
 RUN mkdir /go/pkg && chmod 0777 /go/pkg
