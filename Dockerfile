@@ -15,8 +15,10 @@ RUN --mount=target=. --mount=target=/go/pkg/mod,type=cache \
     go build ./...
 
 FROM base AS test
+ARG TESTFLAGS
 RUN --mount=target=. --mount=target=/go/pkg/mod,type=cache \
     --mount=target=/root/.cache,type=cache \
+    go test -test.v ${TESTFLAGS} ./...
 
 FROM base AS test-noroot
 RUN mkdir /go/pkg && chmod 0777 /go/pkg
