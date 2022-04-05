@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        GO_VERSION: ["1.16", "1.17", "1.18"]
+        GO_VERSION: ["1.17", "1.18"]
     env:
       GO_VERSION: ${{ matrix.GO_VERSION }}
     steps:
@@ -49,7 +49,6 @@ jobs:
       fail-fast: false
       matrix:
         go:
-          - 1.16
           - 1.17
           - 1.18
     steps:
