@@ -94,4 +94,4 @@ jobs:
         run: vagrant up
       -
         name: Test
-        run: vagrant ssh -- "cd /vagrant; go test ./..."
+        run: vagrant ssh -- "cd /vagrant; go test -buildvcs=false ./..."
