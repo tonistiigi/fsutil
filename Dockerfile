@@ -1,4 +1,4 @@
-#syntax=docker/dockerfile:1.2
+#syntax=docker/dockerfile:1.4
 ARG GO_VERSION=1.18
 
 FROM --platform=amd64 tonistiigi/xx:golang AS goxx
