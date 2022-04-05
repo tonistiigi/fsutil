@@ -1,5 +1,5 @@
-# syntax = docker/dockerfile:1.2
-ARG GO_VERSION=1.16
+# syntax = docker/dockerfile:1.4
+ARG GO_VERSION=1.18
 
 FROM golang:${GO_VERSION}-alpine AS gomod
 RUN  apk add --no-cache git

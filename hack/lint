@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-. $(dirname $0)/util
 set -eu -o pipefail -x
 
 : ${CONTINUOUS_INTEGRATION=}

@@ -1,5 +1,5 @@
-# syntax = docker/dockerfile:1.2
-FROM mvdan/shfmt:v3.1.2-alpine AS shfmt
+# syntax = docker/dockerfile:1.4
+FROM mvdan/shfmt:v3.4.3-alpine AS shfmt
 WORKDIR /src
 ARG SHFMT_FLAGS="-i 2 -ci"
 

@@ -355,10 +355,12 @@ type fakeConn struct {
 	sendChan chan *types.Packet
 }
 
+//nolint:unused
 func (fc *fakeConn) Context() context.Context {
 	return fc.ctx
 }
 
+//nolint:unused
 func (fc *fakeConn) RecvMsg(m interface{}) error {
 	p, ok := m.(*types.Packet)
 	if !ok {
@@ -373,6 +375,7 @@ func (fc *fakeConn) RecvMsg(m interface{}) error {
 	}
 }
 
+//nolint:unused
 func (fc *fakeConn) SendMsg(m interface{}) error {
 	p, ok := m.(*types.Packet)
 	if !ok {
