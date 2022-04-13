@@ -13,9 +13,20 @@ import (
 
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tonistiigi/fsutil"
+	"golang.org/x/sys/unix"
 )
+
+// requiresRoot skips tests that require root
+func requiresRoot(t *testing.T) {
+	t.Helper()
+	if os.Getuid() != 0 {
+		t.Skip("skipping test that requires root")
+		return
+	}
+}
 
 // TODO: Create copy directory which requires privilege
 //  chown
@@ -76,6 +87,53 @@ func TestCopyToWorkDir(t *testing.T) {
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
+}
+
+func TestCopyDevicesAndFifo(t *testing.T) {
+	requiresRoot(t)
+
+	t1, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t1)
+
+	err = mknod(filepath.Join(t1, "char"), unix.S_IFCHR|0444, int(unix.Mkdev(1, 9)))
+	require.NoError(t, err)
+
+	err = mknod(filepath.Join(t1, "block"), unix.S_IFBLK|0441, int(unix.Mkdev(3, 2)))
+	require.NoError(t, err)
+
+	err = mknod(filepath.Join(t1, "socket"), unix.S_IFSOCK|0555, 0)
+	require.NoError(t, err)
+
+	err = unix.Mkfifo(filepath.Join(t1, "fifo"), 0555)
+	require.NoError(t, err)
+
+	t2, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer os.RemoveAll(t2)
+
+	err = Copy(context.TODO(), t1, ".", t2, ".")
+	require.NoError(t, err)
+
+	fi, err := os.Lstat(filepath.Join(t2, "char"))
+	require.NoError(t, err)
+	assert.Equal(t, os.ModeCharDevice, fi.Mode()&os.ModeCharDevice)
+	assert.Equal(t, os.FileMode(0444), fi.Mode()&0777)
+
+	fi, err = os.Lstat(filepath.Join(t2, "block"))
+	require.NoError(t, err)
+	assert.Equal(t, os.ModeDevice, fi.Mode()&os.ModeDevice)
+	assert.Equal(t, os.FileMode(0441), fi.Mode()&0777)
+
+	fi, err = os.Lstat(filepath.Join(t2, "fifo"))
+	require.NoError(t, err)
+	assert.Equal(t, os.ModeNamedPipe, fi.Mode()&os.ModeNamedPipe)
+	assert.Equal(t, os.FileMode(0555), fi.Mode()&0777)
+
+	fi, err = os.Lstat(filepath.Join(t2, "socket"))
+	require.NoError(t, err)
+	assert.NotEqual(t, os.ModeSocket, fi.Mode()&os.ModeSocket) // socket copied as stub
+	assert.Equal(t, os.FileMode(0555), fi.Mode()&0777)
 }
 
 func TestCopySingleFile(t *testing.T) {

@@ -15,6 +15,8 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // requiresRoot skips tests that require root
@@ -222,6 +224,55 @@ func TestWalkerWriterAsync(t *testing.T) {
 
 	duration := time.Since(st)
 	assert.True(t, duration < 500*time.Millisecond)
+}
+
+func TestWalkerWriterDevices(t *testing.T) {
+	requiresRoot(t)
+
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/foo1 file data1",
+	}))
+	require.NoError(t, err)
+
+	err = unix.Mknod(filepath.Join(d, "foo/block"), syscall.S_IFBLK|0600, mkdev(2, 3))
+	require.NoError(t, err)
+
+	err = unix.Mknod(filepath.Join(d, "foo/char"), syscall.S_IFCHR|0400, mkdev(1, 9))
+	require.NoError(t, err)
+
+	dest, err := ioutil.TempDir("", "dest")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dest)
+
+	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
+		SyncDataCb: newWriteToFunc(d, 0),
+	})
+	assert.NoError(t, err)
+
+	err = Walk(context.Background(), d, nil, readAsAdd(dw.HandleChange))
+	assert.NoError(t, err)
+
+	err = dw.Wait(context.TODO())
+	assert.NoError(t, err)
+
+	fi, err := os.Lstat(filepath.Join(dest, "foo/char"))
+	require.NoError(t, err)
+
+	stat, ok := fi.Sys().(*syscall.Stat_t)
+	require.True(t, ok)
+
+	assert.Equal(t, uint64(1), stat.Rdev>>8)
+	assert.Equal(t, uint64(9), stat.Rdev&0xff)
+
+	fi, err = os.Lstat(filepath.Join(dest, "foo/block"))
+	require.NoError(t, err)
+
+	stat, ok = fi.Sys().(*syscall.Stat_t)
+	require.True(t, ok)
+
+	assert.Equal(t, uint64(2), stat.Rdev>>8)
+	assert.Equal(t, uint64(3), stat.Rdev&0xff)
 }
 
 func readAsAdd(f HandleChangeFn) filepath.WalkFunc {
