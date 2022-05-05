@@ -572,6 +572,12 @@ func TestCopyIncludeExclude(t *testing.T) {
 			expectedResults: []string{"bar", "bar/foo", "bar/baz"},
 			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/foo",
 		},
+		{
+			name:            "exclude bar/baz",
+			opts:            []Opt{WithExcludePattern("bar/baz")},
+			expectedResults: []string{"bar", "bar/foo", "foo2"},
+			expectedChanges: "add:/bar,add:/bar/foo,add:/foo2",
+		},
 	}
 
 	for _, tc := range testCases {
