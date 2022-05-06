@@ -354,6 +354,14 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 				if err != nil {
 					return "", err
 				}
+
+				// Make sure all files start with the same default permissions,
+				// regardless of OS settings.
+				err = os.Chmod(p, 0644)
+				if err != nil {
+					return "", err
+				}
+
 				if len(c.data) > 0 {
 					if _, err := f.Write([]byte(c.data)); err != nil {
 						return "", err
