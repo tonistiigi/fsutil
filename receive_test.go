@@ -127,10 +127,10 @@ func TestCopySwitchDirToFile(t *testing.T) {
 		eg.Go(func() error {
 			defer s1.(*fakeConnProto).closeSend()
 			return Send(ctx, s1, NewFS(src, &WalkOpt{
-				Map: func(_ string, s *types.Stat) bool {
+				Map: func(_ string, s *types.Stat) MapResult {
 					s.Uid = 0
 					s.Gid = 0
-					return true
+					return MapResultKeep
 				},
 			}), nil)
 		})
@@ -198,10 +198,10 @@ func TestCopySimple(t *testing.T) {
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
 		return Send(ctx, s1, NewFS(d, &WalkOpt{
-			Map: func(_ string, s *types.Stat) bool {
+			Map: func(_ string, s *types.Stat) MapResult {
 				s.Uid = 0
 				s.Gid = 0
-				return true
+				return MapResultKeep
 			},
 		}), nil)
 	})
@@ -276,10 +276,10 @@ file zzz.aa
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
 		return Send(ctx, s1, NewFS(d, &WalkOpt{
-			Map: func(_ string, s *types.Stat) bool {
+			Map: func(_ string, s *types.Stat) MapResult {
 				s.Uid = 0
 				s.Gid = 0
-				return true
+				return MapResultKeep
 			},
 		}), nil)
 	})

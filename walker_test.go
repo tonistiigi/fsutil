@@ -218,12 +218,12 @@ func TestWalkerMap(t *testing.T) {
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
 	err = Walk(context.Background(), d, &WalkOpt{
-		Map: func(_ string, s *types.Stat) bool {
+		Map: func(_ string, s *types.Stat) MapResult {
 			if strings.HasPrefix(s.Path, "foo") {
 				s.Path = "_" + s.Path
-				return true
+				return MapResultKeep
 			}
-			return false
+			return MapResultExclude
 		},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -232,6 +232,40 @@ func TestWalkerMap(t *testing.T) {
 file _foo/bar2
 file _foo2
 `, string(b.Bytes()))
+}
+
+func TestWalkerMapSkipDir(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD excludeDir dir",
+		"ADD excludeDir/a.txt file",
+		"ADD includeDir dir",
+		"ADD includeDir/a.txt file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	// SkipDir is a performance optimization - don't even
+	// bother walking directories we don't care about.
+	walked := []string{}
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &WalkOpt{
+		Map: func(_ string, s *types.Stat) MapResult {
+			walked = append(walked, s.Path)
+			if strings.HasPrefix(s.Path, "excludeDir") {
+				return MapResultSkipDir
+			}
+			if strings.HasPrefix(s.Path, "includeDir") {
+				return MapResultKeep
+			}
+			return MapResultExclude
+		},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, `dir includeDir
+file includeDir/a.txt
+`, string(b.Bytes()))
+	assert.Equal(t, []string{"excludeDir", "includeDir", "includeDir/a.txt"}, walked)
 }
 
 func TestWalkerPermissionDenied(t *testing.T) {
