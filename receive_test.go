@@ -67,8 +67,6 @@ func TestInvalidExcludePatterns(t *testing.T) {
 }
 
 func TestCopyWithSubDir(t *testing.T) {
-	requiresRoot(t)
-
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo dir",
 		"ADD foo/bar file data1",
@@ -82,25 +80,90 @@ func TestCopyWithSubDir(t *testing.T) {
 
 	eg, ctx := errgroup.WithContext(context.Background())
 	s1, s2 := sockPairProto(ctx)
+	// md records whether the metadata had been enforced
+	// for the file tree
+	md := map[string]struct{}{}
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		subdir, err := SubDirFS([]Dir{{FS: NewFS(d, &WalkOpt{}), Stat: types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
+		subdir, err := SubDirFS([]Dir{{FS: NewFS(d, &WalkOpt{}), Stat: types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0o755)}}})
 		if err != nil {
 			return err
 		}
 		return Send(ctx, s1, subdir, nil)
 	})
 	eg.Go(func() error {
-		return Receive(ctx, s2, dest, ReceiveOpt{})
+		return Receive(ctx, s2, dest, ReceiveOpt{
+			diskWriterOpt: DiskWriterOpt{
+				rewriteMetadata: func(_ string, st *types.Stat) error {
+					md[st.Path] = struct{}{}
+					return nil
+				},
+			},
+		})
 	})
 
 	err = eg.Wait()
 	assert.NoError(t, err)
 
-	dt, err := ioutil.ReadFile(filepath.Join(dest, "sub/foo/bar"))
+	validateFileContents(t, "data1", dest, "sub/foo/bar")
+	assert.Equal(t, md, map[string]struct{}{
+		"sub":         {},
+		"sub/foo":     {},
+		"sub/foo/bar": {},
+	})
+}
+
+func TestCopyToMultipleDesintations(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD baz file data2",
+		"ADD foo dir",
+		"ADD foo/bar file data1",
+	}))
 	assert.NoError(t, err)
-	assert.Equal(t, "data1", string(dt))
+	defer os.RemoveAll(d)
+
+	dest, err := ioutil.TempDir("", "dest")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dest)
+
+	dest2, err := ioutil.TempDir("", "anotherdest")
+	assert.NoError(t, err)
+	defer os.RemoveAll(dest2)
+
+	eg, ctx := errgroup.WithContext(context.Background())
+	s1, s2 := sockPairProto(ctx)
+
+	eg.Go(func() error {
+		defer s1.(*fakeConnProto).closeSend()
+		return Send(ctx, s1, NewFS(d, &WalkOpt{
+			Map: func(p string, s *types.Stat) MapResult {
+				s.Uid = 0
+				s.Gid = 0
+				return MapResultKeep
+			},
+		}), nil)
+	})
+	eg.Go(func() error {
+		err := ReceiveMultiple(ctx, s2, []string{dest, dest2}, ReceiveOpt{
+			// err := Receive(ctx, s2, dest, ReceiveOpt{
+			// Merge: true,
+			diskWriterOpt: DiskWriterOpt{
+				rewriteMetadata: func(_ string, st *types.Stat) error {
+					return nil
+				},
+			},
+		})
+		return err
+	})
+
+	err = eg.Wait()
+	assert.NoError(t, err)
+
+	validateFileContents(t, "data1", dest, "foo/bar")
+	validateFileContents(t, "data2", dest, "baz")
+	validateFileContents(t, "data1", dest2, "foo/bar")
+	validateFileContents(t, "data2", dest2, "baz")
 }
 
 func TestCopySwitchDirToFile(t *testing.T) {
@@ -112,10 +175,10 @@ func TestCopySwitchDirToFile(t *testing.T) {
 
 	dest, err := tmpDir(changeStream([]string{
 		"ADD foo dir",
-		"ADD foo/bar dile data2",
+		"ADD foo/bar file data2",
 	}))
 	assert.NoError(t, err)
-	defer os.RemoveAll(d)
+	defer os.RemoveAll(dest)
 
 	copy := func(src, dest string) (*changes, error) {
 		ts := newNotificationBuffer()
@@ -178,7 +241,7 @@ func TestCopySimple(t *testing.T) {
 		"ADD zzz/bb dir",
 		"ADD zzz/bb/cc dir",
 		"ADD zzz/bb/cc/dd symlink ../../",
-		"ADD zzz.aa zzdata",
+		"ADD zzz.aa file zzdata",
 	}))
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
@@ -224,7 +287,7 @@ func TestCopySimple(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `file foo
+	assert.Equal(t, `file foo
 file foo2
 dir zzz
 file zzz/aa
@@ -232,15 +295,10 @@ dir zzz/bb
 dir zzz/bb/cc
 symlink:../../ zzz/bb/cc/dd
 file zzz.aa
-`)
+`, string(b.Bytes()))
 
-	dt, err := ioutil.ReadFile(filepath.Join(dest, "zzz/aa"))
-	assert.NoError(t, err)
-	assert.Equal(t, "data3", string(dt))
-
-	dt, err = ioutil.ReadFile(filepath.Join(dest, "foo2"))
-	assert.NoError(t, err)
-	assert.Equal(t, "dat2", string(dt))
+	validateFileContents(t, "data3", dest, "zzz/aa")
+	validateFileContents(t, "dat2", dest, "foo2")
 
 	fi, err := os.Stat(filepath.Join(dest, "foo2"))
 	assert.NoError(t, err)
@@ -262,7 +320,7 @@ file zzz.aa
 	assert.Equal(t, ok, true)
 	assert.Equal(t, k, ChangeKindAdd)
 
-	err = ioutil.WriteFile(filepath.Join(d, "zzz/bb/cc/foo"), []byte("data5"), 0600)
+	err = ioutil.WriteFile(filepath.Join(d, "zzz/bb/cc/foo"), []byte("data5"), 0o600)
 	assert.NoError(t, err)
 
 	err = os.RemoveAll(filepath.Join(d, "foo2"))
@@ -312,9 +370,7 @@ file zzz/bb/cc/foo
 file zzz.aa
 `)
 
-	dt, err = ioutil.ReadFile(filepath.Join(dest, "zzz/bb/cc/foo"))
-	assert.NoError(t, err)
-	assert.Equal(t, "data5", string(dt))
+	validateFileContents(t, "data5", dest, "zzz/bb/cc/foo")
 
 	h, ok = ts.Hash("zzz/bb/cc/dd")
 	assert.True(t, ok)
@@ -463,7 +519,7 @@ func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 	ss.Devmajor = 0
 
 	if os.FileMode(ss.Mode)&os.ModeSymlink != 0 {
-		ss.Mode = ss.Mode | 0777
+		ss.Mode = ss.Mode | 0o777
 	}
 
 	dt, err := ss.Marshal()
@@ -472,4 +528,10 @@ func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 	}
 	h.Write(dt)
 	return h, nil
+}
+
+func validateFileContents(t *testing.T, contents string, paths ...string) {
+	dt, err := ioutil.ReadFile(filepath.Join(paths...))
+	assert.NoError(t, err)
+	assert.Equal(t, contents, string(dt))
 }

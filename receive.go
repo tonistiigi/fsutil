@@ -26,15 +26,21 @@ type ReceiveOpt struct {
 	Merge         bool
 	Filter        FilterFunc
 	Differ        DiffType
+
+	diskWriterOpt DiskWriterOpt
 }
 
 func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	return ReceiveMultiple(ctx, conn, []string{dest}, opt)
+}
+
+func ReceiveMultiple(ctx context.Context, conn Stream, dests []string, opt ReceiveOpt) error {
+	// ctx, cancel := context.WithCancel(ctx)
+	// defer cancel()
 
 	r := &receiver{
 		conn:          &syncStream{Stream: conn},
-		dest:          dest,
+		dests:         dests,
 		files:         make(map[string]uint32),
 		pipes:         make(map[uint32]io.WriteCloser),
 		notifyHashed:  opt.NotifyHashed,
@@ -43,21 +49,27 @@ func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) erro
 		merge:         opt.Merge,
 		filter:        opt.Filter,
 		differ:        opt.Differ,
+		diskWriterOpt: opt.diskWriterOpt,
 	}
+	r.diskWriterOpt.AsyncDataCb = r.asyncDataFunc
+	r.diskWriterOpt.NotifyCb = r.notifyHashed
+	r.diskWriterOpt.ContentHasher = r.contentHasher
+	r.diskWriterOpt.Filter = r.filter
 	return r.run(ctx)
 }
 
 type receiver struct {
-	dest       string
-	conn       Stream
-	files      map[string]uint32
-	pipes      map[uint32]io.WriteCloser
-	mu         sync.RWMutex
-	muPipes    sync.RWMutex
-	progressCb func(int, bool)
-	merge      bool
-	filter     FilterFunc
-	differ     DiffType
+	dests         []string
+	conn          Stream
+	files         map[string]uint32
+	pipes         map[uint32]io.WriteCloser
+	mu            sync.RWMutex
+	muPipes       sync.RWMutex
+	progressCb    func(int, bool)
+	merge         bool
+	filter        FilterFunc
+	differ        DiffType
+	diskWriterOpt DiskWriterOpt
 
 	notifyHashed   ChangeFunc
 	contentHasher  ContentHasher
@@ -121,29 +133,24 @@ func (w *dynamicWalker) fill(ctx context.Context, pathC chan<- *currentPath) err
 func (r *receiver) run(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
-	dw, err := NewDiskWriter(ctx, r.dest, DiskWriterOpt{
-		AsyncDataCb:   r.asyncDataFunc,
-		NotifyCb:      r.notifyHashed,
-		ContentHasher: r.contentHasher,
-		Filter:        r.filter,
-	})
+	dw, err := NewDiskWriterMultiple(ctx, r.dests, r.diskWriterOpt)
 	if err != nil {
 		return err
 	}
 
 	w := newDynamicWalker()
 
-	g.Go(func() (retErr error) {
+	g.Go(func() (err error) {
 		defer func() {
-			if retErr != nil {
-				r.conn.SendMsg(&types.Packet{Type: types.PACKET_ERR, Data: []byte(retErr.Error())})
+			if err != nil {
+				r.conn.SendMsg(&types.Packet{Type: types.PACKET_ERR, Data: []byte(err.Error())})
 			}
 		}()
-		destWalker := emptyWalker
-		if !r.merge {
-			destWalker = getWalkerFn(r.dest)
+		if r.merge {
+			err = createDir(ctx, dw.HandleChange, w.fill)
+		} else {
+			err = doubleWalkDiff(ctx, dw.HandleChange, getWalkerFn(r.dests[0]), w.fill, r.filter, r.differ)
 		}
-		err := doubleWalkDiff(ctx, dw.HandleChange, destWalker, w.fill, r.filter, r.differ)
 		if err != nil {
 			return err
 		}
@@ -154,7 +161,7 @@ func (r *receiver) run(ctx context.Context) error {
 		return nil
 	})
 
-	g.Go(func() error {
+	g.Go(func() (err error) {
 		var i uint32 = 0
 
 		size := 0
@@ -167,7 +174,7 @@ func (r *receiver) run(ctx context.Context) error {
 		for {
 			p = types.Packet{Data: p.Data[:0]}
 			if err := r.conn.RecvMsg(&p); err != nil {
-				return err
+				return errors.WithStack(err)
 			}
 			if r.progressCb != nil {
 				size += p.Size()
@@ -205,7 +212,7 @@ func (r *receiver) run(ctx context.Context) error {
 				pw, ok := r.pipes[p.ID]
 				r.muPipes.Unlock()
 				if !ok {
-					return errors.Errorf("invalid file request %d", p.ID)
+					return errors.Errorf("[data] invalid file request %d", p.ID)
 				}
 				if len(p.Data) == 0 {
 					if err := pw.Close(); err != nil {
@@ -229,7 +236,11 @@ func (r *receiver) run(ctx context.Context) error {
 			}
 		}
 	})
-	return g.Wait()
+	// return g.Wait()
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *receiver) asyncDataFunc(ctx context.Context, p string, wc io.WriteCloser) error {

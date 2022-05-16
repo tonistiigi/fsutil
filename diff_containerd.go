@@ -55,7 +55,33 @@ const compareChunkSize = 32 * 1024
 type currentPath struct {
 	path string
 	stat *types.Stat
-	//	fullPath string
+}
+
+// createDir walks w to create a copy of it with changeFn
+func createDir(ctx context.Context, changeFn ChangeFunc, w walkerFn) (err error) {
+	g, ctx := errgroup.WithContext(ctx)
+
+	var c = make(chan *currentPath, 128)
+	g.Go(func() error {
+		defer close(c)
+		return w(ctx, c)
+	})
+	g.Go(func() error {
+		for {
+			f, err := nextPath(ctx, c)
+			if err != nil {
+				return err
+			}
+			if f == nil {
+				return nil
+			}
+			if err := changeFn(ChangeKindAdd, f.path, &StatInfo{Stat: f.stat}, nil); err != nil {
+				return err
+			}
+		}
+	})
+
+	return g.Wait()
 }
 
 // doubleWalkDiff walks both directories to create a diff

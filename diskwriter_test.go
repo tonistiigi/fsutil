@@ -63,7 +63,6 @@ symlink:../foo bar/foo2
 file foo
 file foo2 >foo
 `)
-
 }
 
 func TestWriterFileToDir(t *testing.T) {
@@ -158,17 +157,16 @@ func TestWalkerWriterSimple(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `dir bar
+	assert.Equal(t, `dir bar
 file bar/foo
 symlink:../foo bar/foo2
 file foo
 file foo2
-`)
+`, string(b.Bytes()))
 
 	dt, err := ioutil.ReadFile(filepath.Join(dest, "foo"))
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("mydata"), dt)
-
 }
 
 func TestWalkerWriterAsync(t *testing.T) {
@@ -235,10 +233,10 @@ func TestWalkerWriterDevices(t *testing.T) {
 	}))
 	require.NoError(t, err)
 
-	err = unix.Mknod(filepath.Join(d, "foo/block"), syscall.S_IFBLK|0600, mkdev(2, 3))
+	err = unix.Mknod(filepath.Join(d, "foo/block"), syscall.S_IFBLK|0o600, mkdev(2, 3))
 	require.NoError(t, err)
 
-	err = unix.Mknod(filepath.Join(d, "foo/char"), syscall.S_IFCHR|0400, mkdev(1, 9))
+	err = unix.Mknod(filepath.Join(d, "foo/char"), syscall.S_IFCHR|0o400, mkdev(1, 9))
 	require.NoError(t, err)
 
 	dest, err := ioutil.TempDir("", "dest")
