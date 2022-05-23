@@ -335,7 +335,7 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 		}
 	}
 
-	copyFileInfo := true
+	copyFileInfo := include
 	notify := true
 
 	switch {
@@ -345,7 +345,9 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 			include, includeMatchInfo, excludeMatchInfo,
 		); err != nil {
 			return err
-		} else if !overwriteTargetMetadata || c.includePatternMatcher != nil {
+		} else if !overwriteTargetMetadata {
+			// if we aren't supposed to overwrite existing target metadata,
+			// then we only need to copy file info if we newly created it
 			copyFileInfo = created
 		}
 		notify = false
