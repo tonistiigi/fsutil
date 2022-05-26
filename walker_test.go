@@ -32,6 +32,7 @@ func TestWalkerSimple(t *testing.T) {
 	assert.Equal(t, string(b.Bytes()), `file foo
 file foo2
 `)
+
 }
 
 func TestWalkerInclude(t *testing.T) {
@@ -280,10 +281,10 @@ func TestWalkerPermissionDenied(t *testing.T) {
 		"ADD foo/bar dir",
 	}))
 	assert.NoError(t, err)
-	err = os.Chmod(filepath.Join(d, "foo", "bar"), 0o000)
+	err = os.Chmod(filepath.Join(d, "foo", "bar"), 0000)
 	require.NoError(t, err)
 	defer func() {
-		os.Chmod(filepath.Join(d, "bar"), 0o700)
+		os.Chmod(filepath.Join(d, "bar"), 0700)
 		os.RemoveAll(d)
 	}()
 
@@ -366,7 +367,7 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 				return "", errors.Errorf("invalid symlink change %s", p)
 			}
 			if c.fi.IsDir() {
-				if err := os.Mkdir(p, 0o700); err != nil {
+				if err := os.Mkdir(p, 0700); err != nil {
 					return "", err
 				}
 			} else if c.fi.Mode()&os.ModeSymlink != 0 {
@@ -390,7 +391,7 @@ func tmpDir(inp []*change) (dir string, retErr error) {
 
 				// Make sure all files start with the same default permissions,
 				// regardless of OS settings.
-				err = os.Chmod(p, 0o644)
+				err = os.Chmod(p, 0644)
 				if err != nil {
 					return "", err
 				}
@@ -493,6 +494,7 @@ func BenchmarkWalker(b *testing.B) {
 			}
 		})
 	}
+
 }
 
 func TestWalkerDoublestarInclude(t *testing.T) {
@@ -747,7 +749,7 @@ func mkBenchTree(dir string, maxDepth, depth int) error {
 			}
 			fd.Close()
 		} else {
-			err := os.Mkdir(p, 0o755)
+			err := os.Mkdir(p, 0755)
 			if err != nil {
 				return err
 			}

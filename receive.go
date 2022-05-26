@@ -35,9 +35,6 @@ func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) erro
 }
 
 func ReceiveMultiple(ctx context.Context, conn Stream, dests []string, opt ReceiveOpt) error {
-	// ctx, cancel := context.WithCancel(ctx)
-	// defer cancel()
-
 	r := &receiver{
 		conn:          &syncStream{Stream: conn},
 		dests:         dests,
@@ -161,7 +158,7 @@ func (r *receiver) run(ctx context.Context) error {
 		return nil
 	})
 
-	g.Go(func() (err error) {
+	g.Go(func() error {
 		var i uint32 = 0
 
 		size := 0
@@ -174,7 +171,7 @@ func (r *receiver) run(ctx context.Context) error {
 		for {
 			p = types.Packet{Data: p.Data[:0]}
 			if err := r.conn.RecvMsg(&p); err != nil {
-				return errors.WithStack(err)
+				return err
 			}
 			if r.progressCb != nil {
 				size += p.Size()
@@ -212,7 +209,7 @@ func (r *receiver) run(ctx context.Context) error {
 				pw, ok := r.pipes[p.ID]
 				r.muPipes.Unlock()
 				if !ok {
-					return errors.Errorf("[data] invalid file request %d", p.ID)
+					return errors.Errorf("invalid file request %d", p.ID)
 				}
 				if len(p.Data) == 0 {
 					if err := pw.Close(); err != nil {
@@ -236,11 +233,7 @@ func (r *receiver) run(ctx context.Context) error {
 			}
 		}
 	})
-	// return g.Wait()
-	if err := g.Wait(); err != nil {
-		return err
-	}
-	return nil
+	return g.Wait()
 }
 
 func (r *receiver) asyncDataFunc(ctx context.Context, p string, wc io.WriteCloser) error {

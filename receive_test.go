@@ -146,8 +146,7 @@ func TestCopyToMultipleDesintations(t *testing.T) {
 	})
 	eg.Go(func() error {
 		err := ReceiveMultiple(ctx, s2, []string{dest, dest2}, ReceiveOpt{
-			// err := Receive(ctx, s2, dest, ReceiveOpt{
-			// Merge: true,
+			Merge: true,
 			diskWriterOpt: DiskWriterOpt{
 				rewriteMetadata: func(_ string, st *types.Stat) error {
 					return nil
@@ -320,7 +319,7 @@ file zzz.aa
 	assert.Equal(t, ok, true)
 	assert.Equal(t, k, ChangeKindAdd)
 
-	err = ioutil.WriteFile(filepath.Join(d, "zzz/bb/cc/foo"), []byte("data5"), 0o600)
+	err = ioutil.WriteFile(filepath.Join(d, "zzz/bb/cc/foo"), []byte("data5"), 0600)
 	assert.NoError(t, err)
 
 	err = os.RemoveAll(filepath.Join(d, "foo2"))
@@ -519,7 +518,7 @@ func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 	ss.Devmajor = 0
 
 	if os.FileMode(ss.Mode)&os.ModeSymlink != 0 {
-		ss.Mode = ss.Mode | 0o777
+		ss.Mode = ss.Mode | 0777
 	}
 
 	dt, err := ss.Marshal()

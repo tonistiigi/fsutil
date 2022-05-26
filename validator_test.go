@@ -113,7 +113,6 @@ func TestValidatorBackToParent(t *testing.T) {
 	}))
 	assert.Error(t, err)
 }
-
 func TestValidatorParentOrder(t *testing.T) {
 	err := checkValid(changeStream([]string{
 		"ADD foo dir",
@@ -125,7 +124,6 @@ func TestValidatorParentOrder(t *testing.T) {
 	}))
 	assert.Error(t, err)
 }
-
 func TestValidatorBigJump(t *testing.T) {
 	err := checkValid(changeStream([]string{
 		"ADD foo dir",
@@ -138,7 +136,6 @@ func TestValidatorBigJump(t *testing.T) {
 	}))
 	assert.Error(t, err)
 }
-
 func TestValidatorDot(t *testing.T) {
 	// dot is before / in naive sort
 	err := checkValid(changeStream([]string{
@@ -215,7 +212,7 @@ func parseChange(str string) *change {
 	}
 	c.path = f[1]
 	st := &types.Stat{}
-	switch filetyp := f[2]; filetyp {
+	switch typ := f[2]; typ {
 	case "file":
 		if len(f) > 3 {
 			if f[3][0] == '>' {
@@ -235,7 +232,7 @@ func parseChange(str string) *change {
 		st.Mode |= uint32(os.ModeSymlink)
 		st.Linkname = f[3]
 	default:
-		panic(fmt.Sprint("unrecognized file type:", filetyp))
+		panic(fmt.Sprint("unrecognized file type:", typ))
 	}
 	c.fi = &StatInfo{st}
 	return c

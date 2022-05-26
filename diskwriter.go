@@ -93,50 +93,142 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, path string, fi os.FileInfo,
 		}
 	}()
 
-	fws := make(fileWriters, 0, len(dw.dests))
+	if kind == ChangeKindDelete {
+		return dw.handleDelete(path)
+	}
+
+	if err := dw.handleChange(kind, path, fi); err != nil {
+		return errors.WithStack(err)
+	}
+
+	return dw.processChange(kind, path, fi, nil)
+}
+
+func (dw *DiskWriter) handleDelete(path string) error {
 	for _, dest := range dw.dests {
 		destPath := filepath.Join(dest, filepath.FromSlash(path))
-		switch kind {
-		case ChangeKindDelete:
-			if err := dw.handleDelete(destPath, path); err != nil {
+		if dw.filter != nil {
+			var empty types.Stat
+			if ok := dw.filter(path, &empty); !ok {
+				return nil
+			}
+		}
+		// todo: no need to validate if diff is trusted but is it always?
+		if err := os.RemoveAll(destPath); err != nil {
+			return errors.Wrapf(err, "failed to remove: %s", destPath)
+		}
+		if dw.opt.NotifyCb != nil {
+			if err := dw.opt.NotifyCb(ChangeKindDelete, path, nil, nil); err != nil {
 				return err
 			}
-		default:
-			fw := fileWriter{
-				destPath: destPath,
-				destDir:  dest,
-			}
-			if err := dw.handleChange(kind, path, fi, &fw); err != nil {
-				return err
-			}
-			fws = append(fws, fw)
 		}
 	}
-	// TODO(dima): rewrite this to match the original closer
-	if kind == ChangeKindDelete {
-		return nil
+	return nil
+}
+
+func (dw *DiskWriter) handleChange(kind ChangeKind, path string, fi os.FileInfo) (err error) {
+	stat, ok := fi.Sys().(*types.Stat)
+	if !ok {
+		return errors.WithStack(&os.PathError{Path: path, Err: syscall.EBADMSG, Op: "change without stat info"})
 	}
-	files := fws.files()
+
+	var changes fileChanges
+	for _, dest := range dw.dests {
+		destPath := filepath.Join(dest, filepath.FromSlash(path))
+		statCopy := *stat
+		if dw.filter != nil {
+			if ok := dw.filter(path, &statCopy); !ok {
+				return nil
+			}
+		}
+
+		rename := true
+		oldFi, err := os.Lstat(destPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				if kind != ChangeKindAdd {
+					return errors.Wrap(err, "modify/rm")
+				}
+				rename = false
+			} else {
+				return errors.WithStack(err)
+			}
+		}
+
+		if oldFi != nil && fi.IsDir() && oldFi.IsDir() {
+			if err := dw.opt.rewriteMetadata(destPath, &statCopy); err != nil {
+				return errors.Wrapf(err, "error setting dir metadata for %s", destPath)
+			}
+			return nil
+		}
+
+		newPath := destPath
+		if rename {
+			newPath = filepath.Join(filepath.Dir(destPath), ".tmp."+nextSuffix())
+		}
+
+		var file *os.File
+		switch {
+		case fi.IsDir():
+			if err := os.Mkdir(newPath, fi.Mode()); err != nil {
+				return errors.Wrapf(err, "failed to create dir %s", newPath)
+			}
+		case fi.Mode()&os.ModeDevice != 0 || fi.Mode()&os.ModeNamedPipe != 0:
+			if err := handleTarTypeBlockCharFifo(newPath, &statCopy); err != nil {
+				return errors.Wrapf(err, "failed to create device %s", newPath)
+			}
+		case fi.Mode()&os.ModeSymlink != 0:
+			if err := os.Symlink(stat.Linkname, newPath); err != nil {
+				return errors.Wrapf(err, "failed to symlink %s", newPath)
+			}
+		case statCopy.Linkname != "":
+			if err := os.Link(filepath.Join(dest, statCopy.Linkname), newPath); err != nil {
+				return errors.Wrapf(err, "failed to link %s to %s", newPath, statCopy.Linkname)
+			}
+		default:
+			file, err = os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY, fi.Mode()) // todo: windows
+			if err != nil {
+				return errors.Wrapf(err, "failed to create %s", newPath)
+			}
+			if dw.opt.SyncDataCb != nil {
+				break
+			}
+			// Close the file for the side-effect of it being created.
+			if err := file.Close(); err != nil {
+				return errors.Wrapf(err, "failed to close %s", newPath)
+			}
+		}
+		changes = append(changes, fileChange{
+			newPath:   newPath,
+			destPath:  destPath,
+			rename:    rename,
+			file:      file,
+			stat:      statCopy,
+			typChange: rename && oldFi.IsDir() != fi.IsDir(),
+		})
+	}
+
+	files := changes.files()
 	if len(files) != 0 && dw.opt.SyncDataCb != nil {
-		wc := newMultiWriter(fws...)
+		wc := newMultiWriter(files)
 		if err := dw.processChange(ChangeKindAdd, path, fi, wc); err != nil {
 			wc.Close()
 			return err
 		}
 	}
-	for _, fw := range fws {
-		if err := dw.opt.rewriteMetadata(fw.newPath, &fw.stat); err != nil {
-			return errors.Wrapf(err, "error setting metadata for %s", fw.newPath)
+	for _, change := range changes {
+		if err := dw.opt.rewriteMetadata(change.newPath, &change.stat); err != nil {
+			return errors.Wrapf(err, "error setting metadata for %s", change.newPath)
 		}
 
-		if fw.rename {
-			if fw.typChange {
-				if err := os.RemoveAll(fw.destPath); err != nil {
-					return errors.Wrapf(err, "failed to remove %s", fw.destPath)
+		if change.rename {
+			if change.typChange {
+				if err := os.RemoveAll(change.destPath); err != nil {
+					return errors.Wrapf(err, "failed to remove %s", change.destPath)
 				}
 			}
-			if err := os.Rename(fw.newPath, fw.destPath); err != nil {
-				return errors.Wrapf(err, "failed to rename %s to %s", fw.newPath, fw.destPath)
+			if err := os.Rename(change.newPath, change.destPath); err != nil {
+				return errors.Wrapf(err, "failed to rename %s to %s", change.newPath, change.destPath)
 			}
 		}
 	}
@@ -144,116 +236,18 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, path string, fi os.FileInfo,
 		if dw.opt.AsyncDataCb != nil {
 			dw.requestAsyncFileData(path, fi, files)
 		}
-		return nil
-	}
-	return dw.processChange(kind, path, fi, nil)
-}
-
-func (dw *DiskWriter) handleDelete(destPath, path string) error {
-	if dw.filter != nil {
-		var empty types.Stat
-		if ok := dw.filter(path, &empty); !ok {
-			return nil
-		}
-	}
-	// todo: no need to validate if diff is trusted but is it always?
-	if err := os.RemoveAll(destPath); err != nil {
-		return errors.Wrapf(err, "failed to remove: %s", destPath)
-	}
-	if dw.opt.NotifyCb != nil {
-		if err := dw.opt.NotifyCb(ChangeKindDelete, path, nil, nil); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (dw *DiskWriter) handleChange(kind ChangeKind, path string, fi os.FileInfo, res *fileWriter) (err error) {
-	stat, ok := fi.Sys().(*types.Stat)
-	if !ok {
-		return errors.WithStack(&os.PathError{Path: path, Err: syscall.EBADMSG, Op: "change without stat info"})
-	}
-
-	res.stat = *stat
-
-	if dw.filter != nil {
-		if ok := dw.filter(path, &res.stat); !ok {
-			return nil
-		}
-	}
-
-	res.rename = true
-	oldFi, err := os.Lstat(res.destPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			if kind != ChangeKindAdd {
-				return errors.Wrap(err, "modify/rm")
-			}
-			res.rename = false
-		} else {
-			return errors.WithStack(err)
-		}
-	}
-
-	if oldFi != nil && fi.IsDir() && oldFi.IsDir() {
-		if err := dw.opt.rewriteMetadata(res.destPath, &res.stat); err != nil {
-			return errors.Wrapf(err, "error setting dir metadata for %s", res.destPath)
-		}
-		return nil
-	}
-
-	res.newPath = res.destPath
-	if res.rename {
-		res.newPath = filepath.Join(res.destDir, ".tmp."+nextSuffix())
-	}
-
-	res.typChange = oldFi != nil && oldFi.IsDir() != fi.IsDir()
-	switch {
-	case fi.IsDir():
-		if err := os.Mkdir(res.newPath, fi.Mode()); err != nil {
-			return errors.Wrapf(err, "failed to create dir %s", res.newPath)
-		}
-	case fi.Mode()&os.ModeDevice != 0 || fi.Mode()&os.ModeNamedPipe != 0:
-		if err := handleTarTypeBlockCharFifo(res.newPath, &res.stat); err != nil {
-			return errors.Wrapf(err, "failed to create device %s", res.newPath)
-		}
-	case fi.Mode()&os.ModeSymlink != 0:
-		if err := os.Symlink(res.stat.Linkname, res.newPath); err != nil {
-			return errors.Wrapf(err, "failed to symlink %s", res.newPath)
-		}
-	case res.stat.Linkname != "":
-		if err := os.Link(filepath.Join(res.destDir, res.stat.Linkname), res.newPath); err != nil {
-			return errors.Wrapf(err, "failed to link %s to %s", res.newPath, res.stat.Linkname)
-		}
-	default:
-		res.file, err = os.OpenFile(res.newPath, os.O_CREATE|os.O_WRONLY, fi.Mode()) // todo: windows
-		if err != nil {
-			return errors.Wrapf(err, "failed to create %s", res.newPath)
-		}
-		if dw.opt.SyncDataCb != nil {
-			break
-		}
-		// Close the file for the side-effect of it being created.
-		if err := res.file.Close(); err != nil {
-			return errors.Wrapf(err, "failed to close %s", res.newPath)
-		}
-	}
-
-	if res.rename {
-		res.typChange = oldFi.IsDir() != fi.IsDir()
 	}
 
 	return nil
 }
 
-func (dw *DiskWriter) requestAsyncFileData(path string, fi os.FileInfo, fws []fileWriter) {
+func (dw *DiskWriter) requestAsyncFileData(path string, fi os.FileInfo, changes []fileChange) {
 	// todo: limit worker threads
-	// TODO(dima): handle multiple dests
 	dw.eg.Go(func() error {
-		ws := make([]io.Writer, 0, len(fws))
-		for _, fw := range fws {
+		ws := make([]io.Writer, 0, len(changes))
+		for _, change := range changes {
 			ws = append(ws, &lazyFileWriter{
-				dest: fw.destPath,
+				dest: change.destPath,
 			})
 		}
 		wc := &multiWriter{
@@ -263,8 +257,8 @@ func (dw *DiskWriter) requestAsyncFileData(path string, fi os.FileInfo, fws []fi
 			return err
 		}
 		var errs []error
-		for _, fw := range fws {
-			if err := chtimes(fw.destPath, fw.stat.ModTime); err != nil { // TODO: parent dirs
+		for _, change := range changes {
+			if err := chtimes(change.destPath, change.stat.ModTime); err != nil { // TODO: parent dirs
 				errs = append(errs, err)
 			}
 		}
@@ -274,7 +268,6 @@ func (dw *DiskWriter) requestAsyncFileData(path string, fi os.FileInfo, fws []fi
 
 // processChange invokes the corresponding callback (SyncDataCb or AsyncDataCb, in that order)
 // for the file at path with file info fi, using wc to write file's data.
-// assumes that wc is non-nil
 func (dw *DiskWriter) processChange(kind ChangeKind, path string, fi os.FileInfo, wc io.WriteCloser) error {
 	origwc := wc
 	var hw *hashedWriter
@@ -351,14 +344,14 @@ type lazyFileWriter struct {
 
 func (lfw *lazyFileWriter) Write(dt []byte) (int, error) {
 	if lfw.f == nil {
-		file, err := os.OpenFile(lfw.dest, os.O_WRONLY, 0) // todo: windows
+		file, err := os.OpenFile(lfw.dest, os.O_WRONLY, 0) //todo: windows
 		if os.IsPermission(err) {
 			// retry after chmod
 			fi, er := os.Stat(lfw.dest)
 			if er == nil {
 				mode := fi.Mode()
 				lfw.fileMode = &mode
-				er = os.Chmod(lfw.dest, mode|0o222)
+				er = os.Chmod(lfw.dest, mode|0222)
 				if er == nil {
 					file, err = os.OpenFile(lfw.dest, os.O_WRONLY, 0)
 				}
@@ -406,27 +399,27 @@ func nextSuffix() string {
 	return strconv.Itoa(int(1e9 + r%1e9))[1:]
 }
 
-func (r fileWriters) files() (res []fileWriter) {
-	for _, fw := range r {
-		if fw.file != nil {
-			res = append(res, fw)
+// files returns the list of changes that change
+// regular files (e.g. where the file reference is non-nil)
+func (r fileChanges) files() (res []fileChange) {
+	for _, change := range r {
+		if change.file != nil {
+			res = append(res, change)
 		}
 	}
 	return res
 }
 
-type fileWriters []fileWriter
+type fileChanges []fileChange
 
-type fileWriter struct {
+type fileChange struct {
 	// newPath specifies the new absolute path to the file/directory
 	// in case of a rename
 	newPath string
-	// TODO(dima): clearer description
-	// destPath is the destination path
+	// destPath is the absolute path to the file
+	// in destination directory
 	destPath string
-	// destDir specifies the destination directry
-	destDir string
-	rename  bool
+	rename   bool
 	// typChange indicates that a file is being switched to a directory
 	// or vice versa and the old location should be cleaned up
 	typChange bool
@@ -445,14 +438,12 @@ func (r *multiWriter) Close() (err error) {
 	return newMultiErr(errs...)
 }
 
-func newMultiWriter(fws ...fileWriter) *multiWriter {
+func newMultiWriter(changes []fileChange) *multiWriter {
 	var ws []io.Writer
 	var wcs []io.WriteCloser
-	for _, fw := range fws {
-		if fw.file != nil {
-			ws = append(ws, fw.file)
-			wcs = append(wcs, fw.file)
-		}
+	for _, change := range changes {
+		ws = append(ws, change.file)
+		wcs = append(wcs, change.file)
 	}
 	return &multiWriter{
 		Writer: io.MultiWriter(ws...),
