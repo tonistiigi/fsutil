@@ -137,10 +137,10 @@ func (r *receiver) run(ctx context.Context) error {
 
 	w := newDynamicWalker()
 
-	g.Go(func() (err error) {
+	g.Go(func() (retErr error) {
 		defer func() {
-			if err != nil {
-				r.conn.SendMsg(&types.Packet{Type: types.PACKET_ERR, Data: []byte(err.Error())})
+			if retErr != nil {
+				r.conn.SendMsg(&types.Packet{Type: types.PACKET_ERR, Data: []byte(retErr.Error())})
 			}
 		}()
 		if r.merge {
