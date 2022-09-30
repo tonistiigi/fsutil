@@ -1,20 +1,25 @@
 module github.com/tonistiigi/fsutil
 
-go 1.13
+go 1.18
 
 require (
-	github.com/containerd/continuity v0.1.0
-	github.com/docker/docker v20.10.3-0.20211208011758-87521affb077+incompatible // master (v21.xx-dev)
+	github.com/containerd/continuity v0.3.0
 	github.com/gogo/protobuf v1.3.2
-	github.com/golang/protobuf v1.4.3 // indirect
-	github.com/google/go-cmp v0.5.2 // indirect
-	github.com/kr/pretty v0.2.0 // indirect
+	github.com/moby/patternmatcher v0.5.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210313202042-bd2e13477e9c
-	google.golang.org/protobuf v1.25.0 // indirect
+	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad
+)
+
+require (
+	github.com/Microsoft/go-winio v0.5.2 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/kr/pretty v0.2.0 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/sirupsen/logrus v1.8.1 // indirect
+	google.golang.org/protobuf v1.26.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
-	gotest.tools/v3 v3.0.3 // indirect
+	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )
