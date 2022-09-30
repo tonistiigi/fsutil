@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -350,7 +349,7 @@ func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
 }
 
 func tmpDir(inp []*change) (dir string, retErr error) {
-	tmpdir, err := ioutil.TempDir("", "diff")
+	tmpdir, err := os.MkdirTemp("", "diff")
 	if err != nil {
 		return "", err
 	}
@@ -464,7 +463,7 @@ func BenchmarkWalker(b *testing.B) {
 	}} {
 		scenario := scenario // copy loop var
 		b.Run(fmt.Sprintf("[%d]-%s", scenario.maxDepth, scenario.pattern), func(b *testing.B) {
-			tmpdir, err := ioutil.TempDir("", "walk")
+			tmpdir, err := os.MkdirTemp("", "walk")
 			if err != nil {
 				b.Error(err)
 			}

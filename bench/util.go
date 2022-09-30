@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"io/ioutil"
 	"math"
 	mathrand "math/rand"
 	"os"
@@ -15,7 +14,7 @@ import (
 
 func createTestDir(n int) (string, error) {
 	const nesting = 1.0 / 3.0
-	rootDir, err := ioutil.TempDir(os.Getenv("BENCH_BASE_DIR"), "diffcopy")
+	rootDir, err := os.MkdirTemp(os.Getenv("BENCH_BASE_DIR"), "diffcopy")
 	if err != nil {
 		return "", err
 	}

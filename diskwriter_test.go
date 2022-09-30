@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -39,9 +38,7 @@ func TestWriterSimple(t *testing.T) {
 		"ADD foo2 file >foo",
 	})
 
-	dest, err := ioutil.TempDir("", "dest")
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
+	dest := t.TempDir()
 
 	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
 		SyncDataCb: noOpWriteTo,
@@ -142,9 +139,7 @@ func TestWalkerWriterSimple(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 
-	dest, err := ioutil.TempDir("", "dest")
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
+	dest := t.TempDir()
 
 	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
 		SyncDataCb: newWriteToFunc(d, 0),
@@ -165,7 +160,7 @@ file foo
 file foo2
 `)
 
-	dt, err := ioutil.ReadFile(filepath.Join(dest, "foo"))
+	dt, err := os.ReadFile(filepath.Join(dest, "foo"))
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("mydata"), dt)
 
@@ -183,9 +178,7 @@ func TestWalkerWriterAsync(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 
-	dest, err := ioutil.TempDir("", "dest")
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
+	dest := t.TempDir()
 
 	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
 		AsyncDataCb: newWriteToFunc(d, 300*time.Millisecond),
@@ -200,11 +193,11 @@ func TestWalkerWriterAsync(t *testing.T) {
 	err = dw.Wait(context.TODO())
 	assert.NoError(t, err)
 
-	dt, err := ioutil.ReadFile(filepath.Join(dest, "foo/foo3"))
+	dt, err := os.ReadFile(filepath.Join(dest, "foo/foo3"))
 	assert.NoError(t, err)
 	assert.Equal(t, "data3", string(dt))
 
-	dt, err = ioutil.ReadFile(filepath.Join(dest, "foo/foo4"))
+	dt, err = os.ReadFile(filepath.Join(dest, "foo/foo4"))
 	assert.NoError(t, err)
 	assert.Equal(t, "data3", string(dt))
 
@@ -218,7 +211,7 @@ func TestWalkerWriterAsync(t *testing.T) {
 		assert.Equal(t, stat1.Ino, stat2.Ino)
 	}
 
-	dt, err = ioutil.ReadFile(filepath.Join(dest, "foo5"))
+	dt, err = os.ReadFile(filepath.Join(dest, "foo5"))
 	assert.NoError(t, err)
 	assert.Equal(t, "data5", string(dt))
 
@@ -241,9 +234,7 @@ func TestWalkerWriterDevices(t *testing.T) {
 	err = unix.Mknod(filepath.Join(d, "foo/char"), syscall.S_IFCHR|0400, mkdev(1, 9))
 	require.NoError(t, err)
 
-	dest, err := ioutil.TempDir("", "dest")
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
+	dest := t.TempDir()
 
 	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
 		SyncDataCb: newWriteToFunc(d, 0),

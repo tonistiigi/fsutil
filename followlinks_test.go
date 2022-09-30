@@ -1,8 +1,6 @@
 package fsutil
 
 import (
-	"io/ioutil"
-	"os"
 	"testing"
 
 	"github.com/containerd/continuity/fs/fstest"
@@ -10,9 +8,7 @@ import (
 )
 
 func TestFollowLinks(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateDir("dir", 0700),
@@ -32,9 +28,7 @@ func TestFollowLinks(t *testing.T) {
 }
 
 func TestFollowLinksLoop(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.Symlink("l1", "l1"),
@@ -50,9 +44,7 @@ func TestFollowLinksLoop(t *testing.T) {
 }
 
 func TestFollowLinksAbsolute(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateDir("dir", 0700),
@@ -69,9 +61,7 @@ func TestFollowLinksAbsolute(t *testing.T) {
 	require.Equal(t, out, []string{"baz", "dir/l1", "foo/bar"})
 
 	// same but a link outside root
-	tmpDir, err = ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir = t.TempDir()
 
 	apply = fstest.Apply(
 		fstest.CreateDir("dir", 0700),
@@ -89,9 +79,7 @@ func TestFollowLinksAbsolute(t *testing.T) {
 }
 
 func TestFollowLinksNotExists(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	out, err := FollowLinks(tmpDir, []string{"foo/bar/baz", "bar/baz"})
 	require.NoError(t, err)
@@ -111,9 +99,7 @@ func TestFollowLinksNotExists(t *testing.T) {
 }
 
 func TestFollowLinksNormalized(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	out, err := FollowLinks(tmpDir, []string{"foo/bar/baz", "foo/bar"})
 	require.NoError(t, err)
@@ -141,9 +127,7 @@ func TestFollowLinksNormalized(t *testing.T) {
 }
 
 func TestFollowLinksWildcard(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateDir("dir", 0700),
