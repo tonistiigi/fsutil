@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/containerd/continuity v0.3.0
-	github.com/docker/docker v20.10.7+incompatible
+	github.com/docker/docker v20.10.18+incompatible
 	github.com/pkg/errors v0.9.1
 	github.com/tonistiigi/fsutil v0.0.0-00010101000000-000000000000
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
