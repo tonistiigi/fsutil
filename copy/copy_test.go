@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "crypto/sha256"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -46,7 +45,7 @@ func TestCopyDirectory(t *testing.T) {
 
 	exp := "add:/etc,add:/etc/hosts,add:/etc/hosts.allow,add:/home,add:/usr,add:/usr/local,add:/usr/local/lib,add:/usr/local/lib/libnothing.so,add:/usr/local/lib/libnothing.so.2"
 
-	if err := testCopy(apply, exp); err != nil {
+	if err := testCopy(t, apply, exp); err != nil {
 		t.Fatalf("Copy test failed: %+v", err)
 	}
 }
@@ -62,15 +61,13 @@ func TestCopyDirectoryWithLocalSymlink(t *testing.T) {
 
 	exp := "add:/link-no-nothing.txt,add:/nothing.txt"
 
-	if err := testCopy(apply, exp); err != nil {
+	if err := testCopy(t, apply, exp); err != nil {
 		t.Fatalf("Copy test failed: %+v", err)
 	}
 }
 
 func TestCopyToWorkDir(t *testing.T) {
-	t1, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t1)
+	t1 := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateFile("foo.txt", []byte("contents"), 0755),
@@ -78,11 +75,8 @@ func TestCopyToWorkDir(t *testing.T) {
 
 	require.NoError(t, apply.Apply(t1))
 
-	t2, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
-
-	err = Copy(context.TODO(), t1, "foo.txt", t2, "foo.txt")
+	t2 := t.TempDir()
+	err := Copy(context.TODO(), t1, "foo.txt", t2, "foo.txt")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
@@ -92,11 +86,9 @@ func TestCopyToWorkDir(t *testing.T) {
 func TestCopyDevicesAndFifo(t *testing.T) {
 	requiresRoot(t)
 
-	t1, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t1)
+	t1 := t.TempDir()
 
-	err = mknod(filepath.Join(t1, "char"), unix.S_IFCHR|0444, int(unix.Mkdev(1, 9)))
+	err := mknod(filepath.Join(t1, "char"), unix.S_IFCHR|0444, int(unix.Mkdev(1, 9)))
 	require.NoError(t, err)
 
 	err = mknod(filepath.Join(t1, "block"), unix.S_IFBLK|0441, int(unix.Mkdev(3, 2)))
@@ -108,9 +100,7 @@ func TestCopyDevicesAndFifo(t *testing.T) {
 	err = unix.Mkfifo(filepath.Join(t1, "fifo"), 0555)
 	require.NoError(t, err)
 
-	t2, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t2 := t.TempDir()
 
 	err = Copy(context.TODO(), t1, ".", t2, ".")
 	require.NoError(t, err)
@@ -137,9 +127,7 @@ func TestCopyDevicesAndFifo(t *testing.T) {
 }
 
 func TestCopySingleFile(t *testing.T) {
-	t1, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t1)
+	t1 := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateFile("foo.txt", []byte("contents"), 0755),
@@ -147,19 +135,15 @@ func TestCopySingleFile(t *testing.T) {
 
 	require.NoError(t, apply.Apply(t1))
 
-	t2, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t2 := t.TempDir()
 
-	err = Copy(context.TODO(), t1, "foo.txt", t2, "/")
+	err := Copy(context.TODO(), t1, "foo.txt", t2, "/")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
 
-	t3, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t3 := t.TempDir()
 
 	err = Copy(context.TODO(), t1, "foo.txt", t3, "foo.txt")
 	require.NoError(t, err)
@@ -167,9 +151,7 @@ func TestCopySingleFile(t *testing.T) {
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
 
-	t4, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t4 := t.TempDir()
 
 	err = Copy(context.TODO(), t1, "foo.txt", t4, "foo2.txt")
 	require.NoError(t, err)
@@ -189,9 +171,7 @@ func TestCopySingleFile(t *testing.T) {
 }
 
 func TestCopyOverrideFile(t *testing.T) {
-	t1, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t1)
+	t1 := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateFile("foo.txt", []byte("contents"), 0755),
@@ -199,11 +179,9 @@ func TestCopyOverrideFile(t *testing.T) {
 
 	require.NoError(t, apply.Apply(t1))
 
-	t2, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t2 := t.TempDir()
 
-	err = Copy(context.TODO(), t1, "foo.txt", t2, "foo.txt")
+	err := Copy(context.TODO(), t1, "foo.txt", t2, "foo.txt")
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
@@ -223,9 +201,7 @@ func TestCopyOverrideFile(t *testing.T) {
 }
 
 func TestCopyDirectoryBasename(t *testing.T) {
-	t1, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t1)
+	t1 := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateDir("foo", 0755),
@@ -234,13 +210,11 @@ func TestCopyDirectoryBasename(t *testing.T) {
 	)
 	require.NoError(t, apply.Apply(t1))
 
-	t2, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t2 := t.TempDir()
 
 	ch := &changeCollector{}
 
-	err = Copy(context.TODO(), t1, "foo", t2, "foo", WithChangeNotifier(ch.onChange))
+	err := Copy(context.TODO(), t1, "foo", t2, "foo", WithChangeNotifier(ch.onChange))
 	require.NoError(t, err)
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
@@ -262,9 +236,7 @@ func TestCopyDirectoryBasename(t *testing.T) {
 }
 
 func TestCopyWildcards(t *testing.T) {
-	t1, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t1)
+	t1 := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateFile("foo.txt", []byte("foo-contents"), 0755),
@@ -274,11 +246,9 @@ func TestCopyWildcards(t *testing.T) {
 
 	require.NoError(t, apply.Apply(t1))
 
-	t2, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t2 := t.TempDir()
 
-	err = Copy(context.TODO(), t1, "foo*", t2, "/")
+	err := Copy(context.TODO(), t1, "foo*", t2, "/")
 	require.Error(t, err)
 
 	err = Copy(context.TODO(), t1, "foo*", t2, "/", AllowWildcards)
@@ -292,13 +262,11 @@ func TestCopyWildcards(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, os.IsNotExist(err))
 
-	t2, err = ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t3 := t.TempDir()
 
-	err = Copy(context.TODO(), t1, "bar*", t2, "foo.txt", AllowWildcards)
+	err = Copy(context.TODO(), t1, "bar*", t3, "foo.txt", AllowWildcards)
 	require.NoError(t, err)
-	dt, err := ioutil.ReadFile(filepath.Join(t2, "foo.txt"))
+	dt, err := os.ReadFile(filepath.Join(t3, "foo.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "bar-contents", string(dt))
 }
@@ -308,9 +276,7 @@ func TestCopyExistingDirDest(t *testing.T) {
 		t.Skip()
 	}
 
-	t1, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t1)
+	t1 := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateDir("dir", 0755),
@@ -319,9 +285,7 @@ func TestCopyExistingDirDest(t *testing.T) {
 	)
 	require.NoError(t, apply.Apply(t1))
 
-	t2, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t2 := t.TempDir()
 
 	apply = fstest.Apply(
 		// notice how perms for destination and source are different
@@ -333,11 +297,11 @@ func TestCopyExistingDirDest(t *testing.T) {
 	require.NoError(t, apply.Apply(t2))
 
 	for _, x := range []string{"dir", "dir/bar.txt"} {
-		err = os.Chown(filepath.Join(t2, x), 1, 1)
+		err := os.Chown(filepath.Join(t2, x), 1, 1)
 		require.NoErrorf(t, err, "x=%s", x)
 	}
 
-	err = Copy(context.TODO(), t1, "dir", t2, "dir", WithCopyInfo(CopyInfo{
+	err := Copy(context.TODO(), t1, "dir", t2, "dir", WithCopyInfo(CopyInfo{
 		CopyDirContents: true,
 	}))
 	require.NoError(t, err)
@@ -361,15 +325,13 @@ func TestCopyExistingDirDest(t *testing.T) {
 	uid, gid = getUIDGID(st)
 	require.Equal(t, 0, uid)
 	require.Equal(t, 0, gid)
-	dt, err := ioutil.ReadFile(filepath.Join(t2, "dir/bar.txt"))
+	dt, err := os.ReadFile(filepath.Join(t2, "dir/bar.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "bar-contents", string(dt))
 }
 
 func TestCopySymlinks(t *testing.T) {
-	t1, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t1)
+	t1 := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateDir("testdir", 0755),
@@ -379,11 +341,9 @@ func TestCopySymlinks(t *testing.T) {
 	)
 	require.NoError(t, apply.Apply(t1))
 
-	t2, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t2 := t.TempDir()
 
-	err = Copy(context.TODO(), t1, "link/link2", t2, "foo", WithCopyInfo(CopyInfo{
+	err := Copy(context.TODO(), t1, "link/link2", t2, "foo", WithCopyInfo(CopyInfo{
 		FollowLinks: true,
 	}))
 	require.NoError(t, err)
@@ -393,13 +353,11 @@ func TestCopySymlinks(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0644), st.Mode()&os.ModePerm)
 	require.Equal(t, 0, int(st.Mode()&os.ModeSymlink))
-	dt, err := ioutil.ReadFile(filepath.Join(t2, "foo"))
+	dt, err := os.ReadFile(filepath.Join(t2, "foo"))
 	require.NoError(t, err)
 	require.Equal(t, "foo-contents", string(dt))
 
-	t3, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t2)
+	t3 := t.TempDir()
 
 	err = Copy(context.TODO(), t1, "link/link2", t3, "foo", WithCopyInfo(CopyInfo{}))
 	require.NoError(t, err)
@@ -413,18 +371,9 @@ func TestCopySymlinks(t *testing.T) {
 	require.Equal(t, "foo.txt", link)
 }
 
-func testCopy(apply fstest.Applier, exp string) error {
-	t1, err := ioutil.TempDir("", "test-copy-src-")
-	if err != nil {
-		return errors.Wrap(err, "failed to create temporary directory")
-	}
-	defer os.RemoveAll(t1)
-
-	t2, err := ioutil.TempDir("", "test-copy-dst-")
-	if err != nil {
-		return errors.Wrap(err, "failed to create temporary directory")
-	}
-	defer os.RemoveAll(t2)
+func testCopy(t *testing.T, apply fstest.Applier, exp string) error {
+	t1 := t.TempDir()
+	t2 := t.TempDir()
 
 	if err := apply.Apply(t1); err != nil {
 		return errors.Wrap(err, "failed to apply changes")
@@ -443,9 +392,7 @@ func testCopy(apply fstest.Applier, exp string) error {
 }
 
 func TestCopyIncludeExclude(t *testing.T) {
-	t1, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer os.RemoveAll(t1)
+	t1 := t.TempDir()
 
 	apply := fstest.Apply(
 		fstest.CreateDir("bar", 0755),
@@ -582,14 +529,12 @@ func TestCopyIncludeExclude(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t2, err := ioutil.TempDir("", "test")
-			require.NoError(t, err)
-			defer os.RemoveAll(t2)
+			t2 := t.TempDir()
 
 			ch := &changeCollector{}
 			tc.opts = append(tc.opts, WithChangeNotifier(ch.onChange))
 
-			err = Copy(context.Background(), t1, "/", t2, "/", tc.opts...)
+			err := Copy(context.Background(), t1, "/", t2, "/", tc.opts...)
 			require.NoError(t, err, tc.name)
 
 			var results []string

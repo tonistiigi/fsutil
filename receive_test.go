@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"hash"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -28,9 +27,7 @@ func TestInvalidExcludePatterns(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 
-	dest, err := ioutil.TempDir("", "dest")
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
+	dest := t.TempDir()
 
 	ts := newNotificationBuffer()
 	chs := &changes{fn: ts.HandleChange}
@@ -76,9 +73,7 @@ func TestCopyWithSubDir(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 
-	dest, err := ioutil.TempDir("", "dest")
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
+	dest := t.TempDir()
 
 	eg, ctx := errgroup.WithContext(context.Background())
 	s1, s2 := sockPairProto(ctx)
@@ -98,7 +93,7 @@ func TestCopyWithSubDir(t *testing.T) {
 	err = eg.Wait()
 	assert.NoError(t, err)
 
-	dt, err := ioutil.ReadFile(filepath.Join(dest, "sub/foo/bar"))
+	dt, err := os.ReadFile(filepath.Join(dest, "sub/foo/bar"))
 	assert.NoError(t, err)
 	assert.Equal(t, "data1", string(dt))
 }
@@ -183,9 +178,7 @@ func TestCopySimple(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 
-	dest, err := ioutil.TempDir("", "dest")
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
+	dest := t.TempDir()
 
 	ts := newNotificationBuffer()
 	chs := &changes{fn: ts.HandleChange}
@@ -234,11 +227,11 @@ symlink:../../ zzz/bb/cc/dd
 file zzz.aa
 `)
 
-	dt, err := ioutil.ReadFile(filepath.Join(dest, "zzz/aa"))
+	dt, err := os.ReadFile(filepath.Join(dest, "zzz/aa"))
 	assert.NoError(t, err)
 	assert.Equal(t, "data3", string(dt))
 
-	dt, err = ioutil.ReadFile(filepath.Join(dest, "foo2"))
+	dt, err = os.ReadFile(filepath.Join(dest, "foo2"))
 	assert.NoError(t, err)
 	assert.Equal(t, "dat2", string(dt))
 
@@ -262,7 +255,7 @@ file zzz.aa
 	assert.Equal(t, ok, true)
 	assert.Equal(t, k, ChangeKindAdd)
 
-	err = ioutil.WriteFile(filepath.Join(d, "zzz/bb/cc/foo"), []byte("data5"), 0600)
+	err = os.WriteFile(filepath.Join(d, "zzz/bb/cc/foo"), []byte("data5"), 0600)
 	assert.NoError(t, err)
 
 	err = os.RemoveAll(filepath.Join(d, "foo2"))
@@ -312,7 +305,7 @@ file zzz/bb/cc/foo
 file zzz.aa
 `)
 
-	dt, err = ioutil.ReadFile(filepath.Join(dest, "zzz/bb/cc/foo"))
+	dt, err = os.ReadFile(filepath.Join(dest, "zzz/bb/cc/foo"))
 	assert.NoError(t, err)
 	assert.Equal(t, "data5", string(dt))
 

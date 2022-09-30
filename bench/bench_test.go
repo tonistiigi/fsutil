@@ -1,7 +1,6 @@
 package bench
 
 import (
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"testing"
@@ -24,7 +23,7 @@ func benchmarkInitialCopy(b *testing.B, fn func(string, string) error, size int)
 		if err != nil {
 			b.Error(err)
 		}
-		destdir, err := ioutil.TempDir(baseDir, "destdir")
+		destdir, err := os.MkdirTemp(baseDir, "destdir")
 		if err != nil {
 			os.RemoveAll(tmpdir)
 			b.Error(err)
@@ -70,7 +69,7 @@ func benchmarkIncrementalCopy(b *testing.B, fn func(string, string) error, size 
 	if err != nil {
 		b.Error(err)
 	}
-	destdir, err := ioutil.TempDir(baseDir, "destdir")
+	destdir, err := os.MkdirTemp(baseDir, "destdir")
 	if err != nil {
 		os.RemoveAll(tmpdir)
 		b.Error(err)

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -19,7 +18,7 @@ func main() {
 	var excludes []string
 
 	if len(flag.Args()) > 1 {
-		dt, err := ioutil.ReadFile(flag.Args()[1])
+		dt, err := os.ReadFile(flag.Args()[1])
 		if err != nil {
 			panic(err)
 		}

@@ -2,7 +2,6 @@ package fs
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -510,7 +509,7 @@ func (c *copier) copyDirectory(
 		c.parentDirs = c.parentDirs[:len(c.parentDirs)-1]
 	}()
 
-	fis, err := ioutil.ReadDir(src)
+	fis, err := os.ReadDir(src)
 	if err != nil {
 		return false, errors.Wrapf(err, "failed to read %s", src)
 	}
