@@ -3,6 +3,7 @@ module github.com/tonistiigi/fsutil
 go 1.18
 
 require (
+	github.com/Microsoft/go-winio v0.5.2
 	github.com/containerd/continuity v0.3.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/moby/patternmatcher v0.5.0
@@ -14,7 +15,6 @@ require (
 )
 
 require (
-	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kr/pretty v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
