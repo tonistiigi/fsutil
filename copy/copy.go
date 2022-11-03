@@ -294,6 +294,10 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	if err != nil {
 		return errors.Wrapf(err, "failed to stat %s", src)
 	}
+	targetFi, err := os.Lstat(target)
+	if err != nil && !os.IsNotExist(err) {
+		return errors.Wrapf(err, "failed to stat %s", src)
+	}
 
 	include := true
 	var (
@@ -335,6 +339,7 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	}
 
 	copyFileInfo := include
+	restoreFileTimestamp := false
 	notify := true
 
 	switch {
@@ -346,8 +351,10 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 			return err
 		} else if !overwriteTargetMetadata {
 			// if we aren't supposed to overwrite existing target metadata,
-			// then we only need to copy file info if we newly created it
+			// then we only need to copy the new file info if we newly created
+			// it, or restore the previous file timestamp if not
 			copyFileInfo = created
+			restoreFileTimestamp = !created
 		}
 		notify = false
 	case (fi.Mode() & os.ModeType) == 0:
@@ -385,6 +392,10 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 
 		if err := copyXAttrs(target, src, c.xattrErrorHandler); err != nil {
 			return errors.Wrap(err, "failed to copy xattrs")
+		}
+	} else if restoreFileTimestamp && targetFi != nil {
+		if err := c.copyFileTimestamp(fi, target); err != nil {
+			return errors.Wrap(err, "failed to restore file timestamp")
 		}
 	}
 	if notify {
