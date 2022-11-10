@@ -98,6 +98,42 @@ func TestCopyWithSubDir(t *testing.T) {
 	assert.Equal(t, "data1", string(dt))
 }
 
+func TestCopyDirectoryTimestamps(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/bar file data1",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	timestamp := time.Unix(0, 0)
+	require.NoError(t, os.Chtimes(filepath.Join(d, "foo"), timestamp, timestamp))
+
+	dest := t.TempDir()
+
+	eg, ctx := errgroup.WithContext(context.Background())
+	s1, s2 := sockPairProto(ctx)
+
+	eg.Go(func() error {
+		defer s1.(*fakeConnProto).closeSend()
+		return Send(ctx, s1, NewFS(d, nil), nil)
+	})
+	eg.Go(func() error {
+		return Receive(ctx, s2, dest, ReceiveOpt{})
+	})
+
+	err = eg.Wait()
+	assert.NoError(t, err)
+
+	dt, err := os.ReadFile(filepath.Join(dest, "foo/bar"))
+	assert.NoError(t, err)
+	assert.Equal(t, "data1", string(dt))
+
+	stat, err := os.Stat(filepath.Join(dest, "foo"))
+	require.NoError(t, err)
+	assert.Equal(t, timestamp, stat.ModTime())
+}
+
 func TestCopySwitchDirToFile(t *testing.T) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo file data1",
