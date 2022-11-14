@@ -153,6 +153,7 @@ func (c *copier) prepareTargetDir(srcFollowed, src, destPath string, copyDirCont
 
 type User struct {
 	UID, GID int
+	SID      string
 }
 
 type Chowner func(*User) (*User, error)
@@ -386,7 +387,7 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	}
 
 	if copyFileInfo {
-		if err := c.copyFileInfo(fi, target); err != nil {
+		if err := c.copyFileInfo(fi, src, target); err != nil {
 			return errors.Wrap(err, "failed to copy file info")
 		}
 
@@ -460,7 +461,7 @@ func (c *copier) createParentDirs(src, srcComponents, target string, overwriteTa
 			return err
 		}
 		if created {
-			if err := c.copyFileInfo(fi, parentDir.dstPath); err != nil {
+			if err := c.copyFileInfo(fi, parentDir.srcPath, parentDir.dstPath); err != nil {
 				return errors.Wrap(err, "failed to copy file info")
 			}
 
