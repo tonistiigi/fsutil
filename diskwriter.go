@@ -4,7 +4,6 @@ import (
 	"context"
 	"hash"
 	"io"
-	gofs "io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,11 +33,10 @@ type DiskWriter struct {
 	opt  DiskWriterOpt
 	dest string
 
-	ctx         context.Context
-	cancel      func()
-	eg          *errgroup.Group
-	filter      FilterFunc
-	dirModTimes map[string]int64
+	ctx    context.Context
+	cancel func()
+	eg     *errgroup.Group
+	filter FilterFunc
 }
 
 func NewDiskWriter(ctx context.Context, dest string, opt DiskWriterOpt) (*DiskWriter, error) {
@@ -53,32 +51,17 @@ func NewDiskWriter(ctx context.Context, dest string, opt DiskWriterOpt) (*DiskWr
 	eg, ctx := errgroup.WithContext(ctx)
 
 	return &DiskWriter{
-		opt:         opt,
-		dest:        dest,
-		eg:          eg,
-		ctx:         ctx,
-		cancel:      cancel,
-		filter:      opt.Filter,
-		dirModTimes: map[string]int64{},
+		opt:    opt,
+		dest:   dest,
+		eg:     eg,
+		ctx:    ctx,
+		cancel: cancel,
+		filter: opt.Filter,
 	}, nil
 }
 
 func (dw *DiskWriter) Wait(ctx context.Context) error {
-	if err := dw.eg.Wait(); err != nil {
-		return err
-	}
-	return filepath.WalkDir(dw.dest, func(path string, d gofs.DirEntry, prevErr error) error {
-		if prevErr != nil {
-			return prevErr
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		if mtime, ok := dw.dirModTimes[path]; ok {
-			return chtimes(path, mtime)
-		}
-		return nil
-	})
+	return dw.eg.Wait()
 }
 
 func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) (retErr error) {
@@ -164,7 +147,6 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		if err := os.Mkdir(newPath, fi.Mode()); err != nil {
 			return errors.Wrapf(err, "failed to create dir %s", newPath)
 		}
-		dw.dirModTimes[destPath] = statCopy.ModTime
 	case fi.Mode()&os.ModeDevice != 0 || fi.Mode()&os.ModeNamedPipe != 0:
 		if err := handleTarTypeBlockCharFifo(newPath, &statCopy); err != nil {
 			return errors.Wrapf(err, "failed to create device %s", newPath)
@@ -205,7 +187,8 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 				return errors.Wrapf(err, "failed to remove %s", destPath)
 			}
 		}
-		if err := os.Rename(newPath, destPath); err != nil {
+
+		if err := renameFile(newPath, destPath); err != nil {
 			return errors.Wrapf(err, "failed to rename %s to %s", newPath, destPath)
 		}
 	}

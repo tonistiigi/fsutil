@@ -13,6 +13,10 @@ const (
 	seTakeOwnershipPrivilege = "SeTakeOwnershipPrivilege"
 )
 
+func getUIDGID(fi os.FileInfo) (uid, gid int) {
+	return 0, 0
+}
+
 func (c *copier) copyFileInfo(fi os.FileInfo, src, name string) error {
 	if err := os.Chmod(name, fi.Mode()); err != nil {
 		return errors.Wrapf(err, "failed to chmod %s", name)

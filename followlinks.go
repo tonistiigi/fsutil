@@ -31,7 +31,13 @@ type symlinkResolver struct {
 }
 
 func (r *symlinkResolver) append(p string) error {
-	p = filepath.Join(".", p)
+	p = filepath.FromSlash(p)
+	if runtime.GOOS == "windows" && filepath.IsAbs(p) {
+		absParts := strings.SplitN(p, ":", 2)
+		if len(absParts) == 2 {
+			p = absParts[1]
+		}
+	}
 	current := "."
 	for {
 		parts := strings.SplitN(p, string(filepath.Separator), 2)
@@ -41,7 +47,6 @@ func (r *symlinkResolver) append(p string) error {
 		if err != nil {
 			return err
 		}
-
 		p = ""
 		if len(parts) == 2 {
 			p = parts[1]
@@ -76,7 +81,7 @@ func (r *symlinkResolver) readSymlink(p string, allowWildcard bool) ([]string, e
 	if allowWildcard && containsWildcards(base) {
 		fis, err := os.ReadDir(filepath.Dir(realPath))
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+			if isNotFound(err) {
 				return nil, nil
 			}
 			return nil, errors.Wrap(err, "readdir")
@@ -96,7 +101,7 @@ func (r *symlinkResolver) readSymlink(p string, allowWildcard bool) ([]string, e
 
 	fi, err := os.Lstat(realPath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
+		if isNotFound(err) {
 			return nil, nil
 		}
 		return nil, errors.WithStack(err)

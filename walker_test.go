@@ -28,7 +28,7 @@ func TestWalkerSimple(t *testing.T) {
 	err = Walk(context.Background(), d, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `file foo
+	assert.Equal(t, b.String(), `file foo
 file foo2
 `)
 
@@ -48,9 +48,9 @@ func TestWalkerInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir bar
+	assert.Equal(t, filepath.FromSlash(`dir bar
 file bar/foo
-`, string(b.Bytes()))
+`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -58,9 +58,9 @@ file bar/foo
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir bar
+	assert.Equal(t, filepath.FromSlash(`dir bar
 file bar/foo
-`, string(b.Bytes()))
+`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -68,9 +68,9 @@ file bar/foo
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir bar
+	assert.Equal(t, filepath.FromSlash(`dir bar
 file bar/foo
-`, string(b.Bytes()))
+`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -78,9 +78,9 @@ file bar/foo
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir bar
+	assert.Equal(t, filepath.FromSlash(`dir bar
 file bar/foo
-`, string(b.Bytes()))
+`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -97,7 +97,7 @@ file bar/foo
 	assert.NoError(t, err)
 
 	assert.Equal(t, `file foo2
-`, string(b.Bytes()))
+`, b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -105,9 +105,9 @@ file bar/foo
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir bar
+	assert.Equal(t, filepath.FromSlash(`dir bar
 file bar/foo
-`, string(b.Bytes()))
+`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -115,9 +115,9 @@ file bar/foo
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir bar
+	assert.Equal(t, filepath.FromSlash(`dir bar
 file bar/foo
-`, string(b.Bytes()))
+`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -125,9 +125,9 @@ file bar/foo
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir bar
+	assert.Equal(t, filepath.FromSlash(`dir bar
 file bar/foo
-`, string(b.Bytes()))
+`), b.String())
 }
 
 func TestWalkerExclude(t *testing.T) {
@@ -145,24 +145,40 @@ func TestWalkerExclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `file bar
+	assert.Equal(t, filepath.FromSlash(`file bar
 dir foo
 file foo/bar2
-`, string(b.Bytes()))
+`), b.String())
 }
 
 func TestWalkerFollowLinks(t *testing.T) {
-	d, err := tmpDir(changeStream([]string{
-		"ADD bar file",
-		"ADD foo dir",
-		"ADD foo/l1 symlink /baz/one",
-		"ADD foo/l2 symlink /baz/two",
-		"ADD baz dir",
-		"ADD baz/one file",
-		"ADD baz/two symlink ../bax",
-		"ADD bax file",
-		"ADD bay file", // not included
-	}))
+	var d string
+	var err error
+	if runtime.GOOS == "windows" {
+		d, err = tmpDir(changeStream([]string{
+			"ADD bar file",
+			"ADD foo dir",
+			"ADD foo/l1 symlink C:/baz/one",
+			"ADD foo/l2 symlink C:/baz/two",
+			"ADD baz dir",
+			"ADD baz/one file",
+			"ADD baz/two symlink ../bax",
+			"ADD bax file",
+			"ADD bay file", // not included
+		}))
+	} else {
+		d, err = tmpDir(changeStream([]string{
+			"ADD bar file",
+			"ADD foo dir",
+			"ADD foo/l1 symlink /baz/one",
+			"ADD foo/l2 symlink /baz/two",
+			"ADD baz dir",
+			"ADD baz/one file",
+			"ADD baz/two symlink ../bax",
+			"ADD bax file",
+			"ADD bay file", // not included
+		}))
+	}
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
@@ -171,7 +187,18 @@ func TestWalkerFollowLinks(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `file bar
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, filepath.FromSlash(`file bar
+file bax
+dir baz
+file baz/one
+symlink:../bax baz/two
+dir foo
+symlink:C:/baz/one foo/l1
+symlink:C:/baz/two foo/l2
+`), b.String())
+	} else {
+		assert.Equal(t, filepath.FromSlash(`file bar
 file bax
 dir baz
 file baz/one
@@ -179,7 +206,8 @@ symlink:../bax baz/two
 dir foo
 symlink:/baz/one foo/l1
 symlink:/baz/two foo/l2
-`, string(b.Bytes()))
+`), b.String())
+	}
 }
 
 func TestWalkerFollowLinksToRoot(t *testing.T) {
@@ -198,12 +226,12 @@ func TestWalkerFollowLinksToRoot(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `file bar
+	assert.Equal(t, filepath.FromSlash(`file bar
 file bax
 dir bay
 file bay/baz
 symlink:. foo
-`, string(b.Bytes()))
+`), b.String())
 }
 
 func TestWalkerMap(t *testing.T) {
@@ -227,10 +255,10 @@ func TestWalkerMap(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir _foo
+	assert.Equal(t, filepath.FromSlash(`dir _foo
 file _foo/bar2
 file _foo2
-`, string(b.Bytes()))
+`), b.String())
 }
 
 func TestWalkerMapSkipDir(t *testing.T) {
@@ -261,10 +289,10 @@ func TestWalkerMapSkipDir(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, `dir includeDir
+	assert.Equal(t, filepath.FromSlash(`dir includeDir
 file includeDir/a.txt
-`, string(b.Bytes()))
-	assert.Equal(t, []string{"excludeDir", "includeDir", "includeDir/a.txt"}, walked)
+`), b.String())
+	assert.Equal(t, []string{"excludeDir", "includeDir", filepath.FromSlash("includeDir/a.txt")}, walked)
 }
 
 func TestWalkerPermissionDenied(t *testing.T) {
@@ -299,7 +327,7 @@ func TestWalkerPermissionDenied(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 	assert.Equal(t, `dir foo
-`, string(b.Bytes()))
+`, b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -307,7 +335,7 @@ func TestWalkerPermissionDenied(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 	assert.Equal(t, `dir foo
-`, string(b.Bytes()))
+`, b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -323,7 +351,7 @@ func TestWalkerPermissionDenied(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 	assert.Equal(t, `dir foo
-`, string(b.Bytes()))
+`, b.String())
 }
 
 func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
@@ -521,7 +549,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 		dir a
 		dir a/b
 		dir a/b/bar
@@ -535,7 +563,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 		dir foo/bar
 		file foo/bar/bee
 		file foo2
-	`, string(b.Bytes()))
+	`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -543,7 +571,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 		dir a
 		dir a/b
 		dir a/b/bar
@@ -554,7 +582,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 		dir foo
 		dir foo/bar
 		file foo/bar/bee
-	`, string(b.Bytes()))
+	`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -562,14 +590,14 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 		dir a
 		dir a/b
 		dir a/b/bar
 		file a/b/bar/foo
 		dir bar
 		file bar/foo
-	`, string(b.Bytes()))
+	`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -577,7 +605,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 		dir a
 		dir a/b
 		dir a/b/bar
@@ -590,7 +618,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 		dir foo
 		dir foo/bar
 		file foo/bar/bee
-	`, string(b.Bytes()))
+	`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -598,7 +626,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 			dir a
 			dir a/b
 			dir a/b/bar
@@ -606,7 +634,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 			file a/b/bar/fop
 			dir bar
 			file bar/foo
-	`, string(b.Bytes()))
+	`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -614,7 +642,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, ``, string(b.Bytes()))
+	trimEqual(t, ``, b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -622,7 +650,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 		dir a
 		dir a/b
 		dir a/b/bar
@@ -634,7 +662,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 		dir foo/bar
 		file foo/bar/bee
 		file foo2
-	`, string(b.Bytes()))
+	`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -642,7 +670,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 		dir a
 		dir a/b
 		dir a/b/bar
@@ -650,7 +678,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 		file a/b/bar/fop
 		dir bar
 		file bar/foo
-	`, string(b.Bytes()))
+	`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -658,14 +686,14 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 		dir a
 		dir a/b
 		dir a/b/bar
 		file a/b/bar/foo
 		dir bar
 		file bar/foo
-	`, string(b.Bytes()))
+	`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -673,11 +701,11 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 		dir foo
 		dir foo/bar
 		file foo/bar/bee
-	`, string(b.Bytes()))
+	`), b.String())
 
 	b.Reset()
 	err = Walk(context.Background(), d, &WalkOpt{
@@ -685,12 +713,12 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	trimEqual(t, `
+	trimEqual(t, filepath.FromSlash(`
 		dir a
 		dir a/b
 		dir a/b/baz
 		dir baz
-	`, string(b.Bytes()))
+	`), b.String())
 }
 
 func trimEqual(t assert.TestingT, expected, actual string, msgAndArgs ...interface{}) bool {

@@ -1,3 +1,6 @@
+//go:build !windows
+// +build !windows
+
 package fsutil
 
 import (
@@ -6,26 +9,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
 
-	"github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
-
-// requiresRoot skips tests that require root
-func requiresRoot(t *testing.T) {
-	t.Helper()
-	if os.Getuid() != 0 {
-		t.Skip("skipping test that requires root")
-		return
-	}
-}
 
 func TestWriterSimple(t *testing.T) {
 	requiresRoot(t)
@@ -54,7 +45,7 @@ func TestWriterSimple(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `dir bar
+	assert.Equal(t, b.String(), `dir bar
 file bar/foo
 symlink:../foo bar/foo2
 file foo
@@ -91,7 +82,7 @@ func TestWriterFileToDir(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `dir foo
+	assert.Equal(t, b.String(), `dir foo
 file foo/bar
 `)
 }
@@ -124,7 +115,7 @@ func TestWriterDirToFile(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `file foo
+	assert.Equal(t, b.String(), `file foo
 `)
 }
 
@@ -153,7 +144,7 @@ func TestWalkerWriterSimple(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `dir bar
+	assert.Equal(t, b.String(), `dir bar
 file bar/foo
 symlink:../foo bar/foo2
 file foo
@@ -293,42 +284,4 @@ func newWriteToFunc(baseDir string, delay time.Duration) WriteToFunc {
 		}
 		return nil
 	}
-}
-
-type notificationBuffer struct {
-	items map[string]digest.Digest
-	sync.Mutex
-}
-
-func newNotificationBuffer() *notificationBuffer {
-	nb := &notificationBuffer{
-		items: map[string]digest.Digest{},
-	}
-	return nb
-}
-
-type hashed interface {
-	Digest() digest.Digest
-}
-
-func (nb *notificationBuffer) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err error) (retErr error) {
-	nb.Lock()
-	defer nb.Unlock()
-	if kind == ChangeKindDelete {
-		delete(nb.items, p)
-	} else {
-		h, ok := fi.(hashed)
-		if !ok {
-			return errors.Errorf("invalid FileInfo: %s", p)
-		}
-		nb.items[p] = h.Digest()
-	}
-	return nil
-}
-
-func (nb *notificationBuffer) Hash(p string) (digest.Digest, bool) {
-	nb.Lock()
-	v, ok := nb.items[p]
-	nb.Unlock()
-	return v, ok
 }
