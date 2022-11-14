@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/pkg/errors"
@@ -328,6 +329,30 @@ func TestCopyExistingDirDest(t *testing.T) {
 	dt, err := os.ReadFile(filepath.Join(t2, "dir/bar.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "bar-contents", string(dt))
+}
+
+func TestCopyDirectoryContentsTimestamp(t *testing.T) {
+	timestamp := time.Unix(0, 0)
+	apply := fstest.Apply(
+		fstest.CreateDir("/foo/", 0755),
+		fstest.CreateDir("/foo/bar", 0755),
+		fstest.CreateFile("/foo/bar/baz", []byte{}, 0644),
+	)
+
+	t1 := t.TempDir()
+	t2 := t.TempDir()
+
+	require.NoError(t, apply.Apply(t1))
+	require.NoError(t, Copy(context.TODO(), t1, "/foo", t2, "/foo", WithCopyInfo(CopyInfo{
+		CopyDirContents: true,
+		Utime:           &timestamp,
+	})))
+	require.NoError(t, fstest.CheckDirectoryEqual(t1, t2))
+
+	for _, s := range []string{"/foo/bar/baz", "/foo/bar", "/foo"} {
+		stat, _ := os.Stat(filepath.Join(t2, s))
+		require.Equal(t, timestamp, stat.ModTime())
+	}
 }
 
 func TestCopySymlinks(t *testing.T) {

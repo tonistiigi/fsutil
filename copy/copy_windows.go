@@ -17,6 +17,12 @@ func (c *copier) copyFileInfo(fi os.FileInfo, name string) error {
 	return nil
 }
 
+func (c *copier) copyFileTimestamp(fi os.FileInfo, name string) error {
+	// TODO: copy windows specific metadata
+
+	return nil
+}
+
 func copyFile(source, target string) error {
 	src, err := os.Open(source)
 	if err != nil {
