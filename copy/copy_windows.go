@@ -58,12 +58,23 @@ func (c *copier) copyFileInfo(fi os.FileInfo, src, name string) error {
 
 		return err
 	}
+
+	if err := c.copyFileTimestamp(fi, name); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (c *copier) copyFileTimestamp(fi os.FileInfo, name string) error {
-	// TODO: copy windows specific metadata
+	if c.utime != nil {
+		return Utimes(name, c.utime)
+	}
 
+	if fi.Mode()&os.ModeSymlink == 0 {
+		if err := os.Chtimes(name, fi.ModTime(), fi.ModTime()); err != nil {
+			return errors.Wrap(err, "changing mtime")
+		}
+	}
 	return nil
 }
 

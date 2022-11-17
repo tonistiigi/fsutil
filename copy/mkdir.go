@@ -22,12 +22,10 @@ func MkdirAll(path string, perm os.FileMode, user Chowner, tm *time.Time) error 
 	for i > 0 && os.IsPathSeparator(path[i-1]) { // Skip trailing path separator.
 		i--
 	}
-
 	j := i
 	for j > 0 && !os.IsPathSeparator(path[j-1]) { // Scan backward over element.
 		j--
 	}
-
 	if j > 1 {
 		// Create parent.
 		err = MkdirAll(fixRootDirectory(path[:j-1]), perm, user, tm)
@@ -35,7 +33,6 @@ func MkdirAll(path string, perm os.FileMode, user Chowner, tm *time.Time) error 
 			return err
 		}
 	}
-
 	dir, err1 := os.Lstat(path)
 	if err1 == nil && dir.IsDir() {
 		return nil
