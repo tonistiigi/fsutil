@@ -13,6 +13,10 @@ const (
 	seTakeOwnershipPrivilege = "SeTakeOwnershipPrivilege"
 )
 
+func getUIDGID(fi os.FileInfo) (uid, gid int) {
+	return 0, 0
+}
+
 func getFileSecurityInfo(name string) (*windows.SID, *windows.ACL, error) {
 	secInfo, err := windows.GetNamedSecurityInfo(
 		name, windows.SE_FILE_OBJECT,

@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/Microsoft/go-winio v0.5.2
-	github.com/containerd/continuity v0.3.0
+	github.com/containerd/continuity v0.3.1-0.20230206214859-2a963a2f56e8
 	github.com/gogo/protobuf v1.3.2
 	github.com/moby/patternmatcher v0.5.0
 	github.com/opencontainers/go-digest v1.0.0
