@@ -4,7 +4,6 @@ import (
 	"context"
 	"hash"
 	"os"
-	"path/filepath"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
@@ -33,7 +32,7 @@ func getWalkerFn(root string) walkerFn {
 			}
 
 			p := &currentPath{
-				path: filepath.FromSlash(path),
+				path: path,
 				stat: stat,
 			}
 
