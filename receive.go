@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -190,7 +191,7 @@ func (r *receiver) run(ctx context.Context) error {
 					r.mu.Unlock()
 				}
 				i++
-				cp := &currentPath{path: p.Stat.Path, stat: p.Stat}
+				cp := &currentPath{path: filepath.FromSlash(p.Stat.Path), stat: p.Stat}
 				if err := r.orderValidator.HandleChange(ChangeKindAdd, cp.path, &StatInfo{cp.stat}, nil); err != nil {
 					return err
 				}
