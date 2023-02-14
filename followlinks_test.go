@@ -1,6 +1,8 @@
 package fsutil
 
 import (
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/containerd/continuity/fs/fstest"
@@ -46,9 +48,14 @@ func TestFollowLinksLoop(t *testing.T) {
 func TestFollowLinksAbsolute(t *testing.T) {
 	tmpDir := t.TempDir()
 
+	abslutePathForBaz := "/foo/bar/baz"
+	if runtime.GOOS == "windows" {
+		abslutePathForBaz = "C:/foo/bar/baz"
+	}
+
 	apply := fstest.Apply(
 		fstest.CreateDir("dir", 0700),
-		fstest.Symlink("/foo/bar/baz", "dir/l1"),
+		fstest.Symlink(abslutePathForBaz, "dir/l1"),
 		fstest.CreateDir("foo", 0700),
 		fstest.Symlink("../", "foo/bar"),
 		fstest.CreateFile("baz", nil, 0600),
@@ -58,14 +65,14 @@ func TestFollowLinksAbsolute(t *testing.T) {
 	out, err := FollowLinks(tmpDir, []string{"dir/l1"})
 	require.NoError(t, err)
 
-	require.Equal(t, out, []string{"baz", "dir/l1", "foo/bar"})
+	require.Equal(t, []string{"baz", "dir/l1", "foo/bar"}, out)
 
 	// same but a link outside root
 	tmpDir = t.TempDir()
 
 	apply = fstest.Apply(
 		fstest.CreateDir("dir", 0700),
-		fstest.Symlink("/foo/bar/baz", "dir/l1"),
+		fstest.Symlink(abslutePathForBaz, "dir/l1"),
 		fstest.CreateDir("foo", 0700),
 		fstest.Symlink("../../../", "foo/bar"),
 		fstest.CreateFile("baz", nil, 0600),
@@ -75,7 +82,7 @@ func TestFollowLinksAbsolute(t *testing.T) {
 	out, err = FollowLinks(tmpDir, []string{"dir/l1"})
 	require.NoError(t, err)
 
-	require.Equal(t, out, []string{"baz", "dir/l1", "foo/bar"})
+	require.Equal(t, []string{"baz", "dir/l1", "foo/bar"}, out)
 }
 
 func TestFollowLinksNotExists(t *testing.T) {
@@ -95,7 +102,7 @@ func TestFollowLinksNotExists(t *testing.T) {
 	out, err = FollowLinks(tmpDir, []string{"f*/foo/t*"})
 	require.NoError(t, err)
 
-	require.Equal(t, out, []string{"f*/foo/t*"})
+	require.Equal(t, []string{"f*/foo/t*"}, out)
 }
 
 func TestFollowLinksNormalized(t *testing.T) {
@@ -106,10 +113,15 @@ func TestFollowLinksNormalized(t *testing.T) {
 
 	require.Equal(t, out, []string{"foo/bar"})
 
+	rootPath := "/"
+	if runtime.GOOS == "windows" {
+		rootPath = "C:/"
+	}
+
 	apply := fstest.Apply(
 		fstest.CreateDir("dir", 0700),
-		fstest.Symlink("/foo", "dir/l1"),
-		fstest.Symlink("/", "dir/l2"),
+		fstest.Symlink(filepath.Join(rootPath, "foo"), "dir/l1"),
+		fstest.Symlink(rootPath, "dir/l2"),
 		fstest.CreateDir("foo", 0700),
 		fstest.CreateFile("foo/bar", nil, 0600),
 	)
@@ -129,12 +141,17 @@ func TestFollowLinksNormalized(t *testing.T) {
 func TestFollowLinksWildcard(t *testing.T) {
 	tmpDir := t.TempDir()
 
+	absolutePathForFoo := "/foo"
+	if runtime.GOOS == "windows" {
+		absolutePathForFoo = "C:/foo"
+	}
+
 	apply := fstest.Apply(
 		fstest.CreateDir("dir", 0700),
 		fstest.CreateDir("foo", 0700),
-		fstest.Symlink("/foo/bar1", "dir/l1"),
-		fstest.Symlink("/foo/bar2", "dir/l2"),
-		fstest.Symlink("/foo/bar3", "dir/anotherlink"),
+		fstest.Symlink(filepath.Join(absolutePathForFoo, "bar1"), "dir/l1"),
+		fstest.Symlink(filepath.Join(absolutePathForFoo, "bar2"), "dir/l2"),
+		fstest.Symlink(filepath.Join(absolutePathForFoo, "bar3"), "dir/anotherlink"),
 		fstest.Symlink("../baz", "foo/bar2"),
 		fstest.CreateFile("foo/bar1", nil, 0600),
 		fstest.CreateFile("foo/bar3", nil, 0600),
@@ -145,7 +162,7 @@ func TestFollowLinksWildcard(t *testing.T) {
 	out, err := FollowLinks(tmpDir, []string{"dir/l*"})
 	require.NoError(t, err)
 
-	require.Equal(t, out, []string{"baz", "dir/l*", "foo/bar1", "foo/bar2"})
+	require.Equal(t, []string{"baz", "dir/l*", "foo/bar1", "foo/bar2"}, out)
 
 	out, err = FollowLinks(tmpDir, []string{"dir"})
 	require.NoError(t, err)
