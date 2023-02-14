@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -13,10 +14,8 @@ import (
 
 	"github.com/containerd/continuity/fs/fstest"
 	"github.com/pkg/errors"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tonistiigi/fsutil"
-	"golang.org/x/sys/unix"
 )
 
 // requiresRoot skips tests that require root
@@ -44,7 +43,7 @@ func TestCopyDirectory(t *testing.T) {
 		fstest.CreateDir("/home", 0755),
 	)
 
-	exp := "add:/etc,add:/etc/hosts,add:/etc/hosts.allow,add:/home,add:/usr,add:/usr/local,add:/usr/local/lib,add:/usr/local/lib/libnothing.so,add:/usr/local/lib/libnothing.so.2"
+	exp := filepath.FromSlash("add:/etc,add:/etc/hosts,add:/etc/hosts.allow,add:/home,add:/usr,add:/usr/local,add:/usr/local/lib,add:/usr/local/lib/libnothing.so,add:/usr/local/lib/libnothing.so.2")
 
 	if err := testCopy(t, apply, exp); err != nil {
 		t.Fatalf("Copy test failed: %+v", err)
@@ -60,7 +59,7 @@ func TestCopyDirectoryWithLocalSymlink(t *testing.T) {
 		fstest.Symlink("nothing.txt", "link-no-nothing.txt"),
 	)
 
-	exp := "add:/link-no-nothing.txt,add:/nothing.txt"
+	exp := filepath.FromSlash("add:/link-no-nothing.txt,add:/nothing.txt")
 
 	if err := testCopy(t, apply, exp); err != nil {
 		t.Fatalf("Copy test failed: %+v", err)
@@ -82,49 +81,6 @@ func TestCopyToWorkDir(t *testing.T) {
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
-}
-
-func TestCopyDevicesAndFifo(t *testing.T) {
-	requiresRoot(t)
-
-	t1 := t.TempDir()
-
-	err := mknod(filepath.Join(t1, "char"), unix.S_IFCHR|0444, int(unix.Mkdev(1, 9)))
-	require.NoError(t, err)
-
-	err = mknod(filepath.Join(t1, "block"), unix.S_IFBLK|0441, int(unix.Mkdev(3, 2)))
-	require.NoError(t, err)
-
-	err = mknod(filepath.Join(t1, "socket"), unix.S_IFSOCK|0555, 0)
-	require.NoError(t, err)
-
-	err = unix.Mkfifo(filepath.Join(t1, "fifo"), 0555)
-	require.NoError(t, err)
-
-	t2 := t.TempDir()
-
-	err = Copy(context.TODO(), t1, ".", t2, ".")
-	require.NoError(t, err)
-
-	fi, err := os.Lstat(filepath.Join(t2, "char"))
-	require.NoError(t, err)
-	assert.Equal(t, os.ModeCharDevice, fi.Mode()&os.ModeCharDevice)
-	assert.Equal(t, os.FileMode(0444), fi.Mode()&0777)
-
-	fi, err = os.Lstat(filepath.Join(t2, "block"))
-	require.NoError(t, err)
-	assert.Equal(t, os.ModeDevice, fi.Mode()&os.ModeDevice)
-	assert.Equal(t, os.FileMode(0441), fi.Mode()&0777)
-
-	fi, err = os.Lstat(filepath.Join(t2, "fifo"))
-	require.NoError(t, err)
-	assert.Equal(t, os.ModeNamedPipe, fi.Mode()&os.ModeNamedPipe)
-	assert.Equal(t, os.FileMode(0555), fi.Mode()&0777)
-
-	fi, err = os.Lstat(filepath.Join(t2, "socket"))
-	require.NoError(t, err)
-	assert.NotEqual(t, os.ModeSocket, fi.Mode()&os.ModeSocket) // socket copied as stub
-	assert.Equal(t, os.FileMode(0555), fi.Mode()&0777)
 }
 
 func TestCopySingleFile(t *testing.T) {
@@ -168,7 +124,7 @@ func TestCopySingleFile(t *testing.T) {
 	_, err = os.Stat(filepath.Join(t4, "a/b/c/foo2.txt"))
 	require.NoError(t, err)
 
-	require.Equal(t, "add:/a/b/c/foo2.txt", ch.String())
+	require.Equal(t, filepath.FromSlash("add:/a/b/c/foo2.txt"), ch.String())
 }
 
 func TestCopyOverrideFile(t *testing.T) {
@@ -221,7 +177,7 @@ func TestCopyDirectoryBasename(t *testing.T) {
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
 
-	require.Equal(t, "add:/foo,add:/foo/bar,add:/foo/bar/baz.txt", ch.String())
+	require.Equal(t, filepath.FromSlash("add:/foo,add:/foo/bar,add:/foo/bar/baz.txt"), ch.String())
 
 	ch = &changeCollector{}
 	err = Copy(context.TODO(), t1, "foo", t2, "foo", WithCopyInfo(CopyInfo{
@@ -230,7 +186,7 @@ func TestCopyDirectoryBasename(t *testing.T) {
 	}))
 	require.NoError(t, err)
 
-	require.Equal(t, "add:/foo/bar,add:/foo/bar/baz.txt", ch.String())
+	require.Equal(t, filepath.FromSlash("add:/foo/bar,add:/foo/bar/baz.txt"), ch.String())
 
 	err = fstest.CheckDirectoryEqual(t1, t2)
 	require.NoError(t, err)
@@ -311,9 +267,12 @@ func TestCopyExistingDirDest(t *testing.T) {
 	st, err := os.Lstat(filepath.Join(t2, "dir"))
 	require.NoError(t, err)
 	require.Equal(t, st.Mode()&os.ModePerm, os.FileMode(0700))
-	uid, gid := getUIDGID(st)
-	require.Equal(t, 1, uid)
-	require.Equal(t, 1, gid)
+	var uid, gid int
+	if runtime.GOOS != "windows" {
+		uid, gid = getUIDGID(st)
+		require.Equal(t, 1, uid)
+		require.Equal(t, 1, gid)
+	}
 
 	// verify that non-existing file was created
 	_, err = os.Lstat(filepath.Join(t2, "dir/foo.txt"))
@@ -323,9 +282,11 @@ func TestCopyExistingDirDest(t *testing.T) {
 	st, err = os.Lstat(filepath.Join(t2, "dir/bar.txt"))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0644), st.Mode()&os.ModePerm)
-	uid, gid = getUIDGID(st)
-	require.Equal(t, 0, uid)
-	require.Equal(t, 0, gid)
+	if runtime.GOOS != "windows" {
+		uid, gid = getUIDGID(st)
+		require.Equal(t, 0, uid)
+		require.Equal(t, 0, gid)
+	}
 	dt, err := os.ReadFile(filepath.Join(t2, "dir/bar.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "bar-contents", string(dt))
@@ -376,7 +337,9 @@ func TestCopySymlinks(t *testing.T) {
 	// verify that existing destination dir's metadata was not overwritten
 	st, err := os.Lstat(filepath.Join(t2, "foo"))
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0644), st.Mode()&os.ModePerm)
+	if runtime.GOOS != "windows" {
+		require.Equal(t, os.FileMode(0644), st.Mode()&os.ModePerm)
+	}
 	require.Equal(t, 0, int(st.Mode()&os.ModeSymlink))
 	dt, err := os.ReadFile(filepath.Join(t2, "foo"))
 	require.NoError(t, err)
@@ -439,37 +402,37 @@ func TestCopyIncludeExclude(t *testing.T) {
 			name:            "include bar",
 			opts:            []Opt{WithIncludePattern("bar")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
-			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo",
+			expectedChanges: filepath.FromSlash("add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo"),
 		},
 		{
 			name:            "include *",
 			opts:            []Opt{WithIncludePattern("*")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3", "foo2"},
-			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo,add:/foo2",
+			expectedChanges: filepath.FromSlash("add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo,add:/foo2"),
 		},
 		{
 			name:            "include bar/foo",
 			opts:            []Opt{WithIncludePattern("bar/foo")},
 			expectedResults: []string{"bar", "bar/foo"},
-			expectedChanges: "add:/bar/foo",
+			expectedChanges: filepath.FromSlash("add:/bar/foo"),
 		},
 		{
 			name:            "include bar except bar/foo",
 			opts:            []Opt{WithIncludePattern("bar"), WithIncludePattern("!bar/foo")},
 			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3"},
-			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3",
+			expectedChanges: filepath.FromSlash("add:/bar,add:/bar/baz,add:/bar/baz/foo3"),
 		},
 		{
 			name:            "include bar/foo and foo*",
 			opts:            []Opt{WithIncludePattern("bar/foo"), WithIncludePattern("foo*")},
 			expectedResults: []string{"bar", "bar/foo", "foo2"},
-			expectedChanges: "add:/bar/foo,add:/foo2",
+			expectedChanges: filepath.FromSlash("add:/bar/foo,add:/foo2"),
 		},
 		{
 			name:            "include b*",
 			opts:            []Opt{WithIncludePattern("b*")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
-			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo",
+			expectedChanges: filepath.FromSlash("add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo"),
 		},
 		{
 			name:            "include bar/f*",
@@ -530,25 +493,25 @@ func TestCopyIncludeExclude(t *testing.T) {
 			name:            "doublestar matching second item in path",
 			opts:            []Opt{WithIncludePattern("**/baz")},
 			expectedResults: []string{"bar", "bar/baz", "bar/baz/foo3"},
-			expectedChanges: "add:/bar/baz,add:/bar/baz/foo3",
+			expectedChanges: filepath.FromSlash("add:/bar/baz,add:/bar/baz/foo3"),
 		},
 		{
 			name:            "doublestar matching first item in path",
 			opts:            []Opt{WithIncludePattern("**/bar")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz", "bar/baz/foo3"},
-			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo",
+			expectedChanges: filepath.FromSlash("add:/bar,add:/bar/baz,add:/bar/baz/foo3,add:/bar/foo"),
 		},
 		{
 			name:            "doublestar exclude",
 			opts:            []Opt{WithIncludePattern("bar"), WithExcludePattern("**/foo3")},
 			expectedResults: []string{"bar", "bar/foo", "bar/baz"},
-			expectedChanges: "add:/bar,add:/bar/baz,add:/bar/foo",
+			expectedChanges: filepath.FromSlash("add:/bar,add:/bar/baz,add:/bar/foo"),
 		},
 		{
 			name:            "exclude bar/baz",
 			opts:            []Opt{WithExcludePattern("bar/baz")},
 			expectedResults: []string{"bar", "bar/foo", "foo2"},
-			expectedChanges: "add:/bar,add:/bar/foo,add:/foo2",
+			expectedChanges: filepath.FromSlash("add:/bar,add:/bar/foo,add:/foo2"),
 		},
 	}
 
