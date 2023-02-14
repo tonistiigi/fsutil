@@ -5,7 +5,7 @@ package fsutil
 
 import (
 	"fmt"
-	ioFS "io/fs"
+	iofs "io/fs"
 	"os"
 	"syscall"
 
@@ -24,7 +24,7 @@ func handleTarTypeBlockCharFifo(path string, stat *types.Stat) error {
 	return errors.New("Not implemented on windows")
 }
 
-func getFileHandle(path string, info ioFS.FileInfo) (syscall.Handle, error) {
+func getFileHandle(path string, info iofs.FileInfo) (syscall.Handle, error) {
 	p, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
 		return 0, errors.Wrap(err, "converting string to UTF-16")
@@ -42,7 +42,7 @@ func getFileHandle(path string, info ioFS.FileInfo) (syscall.Handle, error) {
 	return h, nil
 }
 
-func readlink(path string, info ioFS.FileInfo) ([]byte, error) {
+func readlink(path string, info iofs.FileInfo) ([]byte, error) {
 	h, err := getFileHandle(path, info)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting file handle")
@@ -58,7 +58,7 @@ func readlink(path string, info ioFS.FileInfo) ([]byte, error) {
 	return rdbbuf[:bytesReturned], nil
 }
 
-func getReparsePoint(path string, info ioFS.FileInfo) (*winio.ReparsePoint, error) {
+func getReparsePoint(path string, info iofs.FileInfo) (*winio.ReparsePoint, error) {
 	target, err := readlink(path, info)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching link")
