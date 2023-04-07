@@ -48,8 +48,10 @@ func Chown(p string, old *User, fn Chowner) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-
-	userSIDstring := user.SID
+	var userSIDstring string
+	if user != nil && user.SID != "" {
+		userSIDstring = user.SID
+	}
 	if userSIDstring == "" {
 		userSIDstring = containerAdministratorSidString
 
