@@ -188,7 +188,6 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 				file.Close()
 				return err
 			}
-			break
 		}
 		if err := file.Close(); err != nil {
 			return errors.Wrapf(err, "failed to close %s", newPath)
