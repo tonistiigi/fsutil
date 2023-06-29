@@ -411,6 +411,7 @@ func BenchmarkWalker(b *testing.B) {
 	for _, scenario := range []struct {
 		maxDepth int
 		pattern  string
+		exclude  string
 		expected int
 	}{{
 		maxDepth: 1,
@@ -460,9 +461,18 @@ func BenchmarkWalker(b *testing.B) {
 		maxDepth: 6,
 		pattern:  "**/target",
 		expected: 2388,
+	}, {
+		maxDepth: 6,
+		pattern:  "**",
+		exclude:  "*/*/**",
+		expected: 20,
 	}} {
 		scenario := scenario // copy loop var
-		b.Run(fmt.Sprintf("[%d]-%s", scenario.maxDepth, scenario.pattern), func(b *testing.B) {
+		suffix := ""
+		if scenario.exclude != "" {
+			suffix = fmt.Sprintf("-!%s", scenario.exclude)
+		}
+		b.Run(fmt.Sprintf("[%d]-%s%s", scenario.maxDepth, scenario.pattern, suffix), func(b *testing.B) {
 			tmpdir, err := os.MkdirTemp("", "walk")
 			if err != nil {
 				b.Error(err)
@@ -478,12 +488,17 @@ func BenchmarkWalker(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				count := 0
-				err = Walk(context.Background(), tmpdir, &WalkOpt{
+				walkOpt := &WalkOpt{
 					IncludePatterns: []string{scenario.pattern},
-				}, func(path string, fi os.FileInfo, err error) error {
-					count++
-					return nil
-				})
+				}
+				if scenario.exclude != "" {
+					walkOpt.ExcludePatterns = []string{scenario.exclude}
+				}
+				err = Walk(context.Background(), tmpdir, walkOpt,
+					func(path string, fi os.FileInfo, err error) error {
+						count++
+						return nil
+					})
 				if err != nil {
 					b.Error(err)
 				}
