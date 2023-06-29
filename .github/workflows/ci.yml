@@ -75,6 +75,7 @@ jobs:
 
   test-freebsd-amd64:
     runs-on: macos-latest
+    timeout-minutes: 60
     env:
       VAGRANT_VAGRANTFILE: hack/Vagrantfile.freebsd13
     steps:
