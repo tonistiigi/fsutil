@@ -3,7 +3,7 @@ module github.com/tonistiigi/fsutil/bench
 go 1.19
 
 require (
-	github.com/containerd/continuity v0.3.1-0.20230206214859-2a963a2f56e8
+	github.com/containerd/continuity v0.4.1
 	github.com/docker/docker v20.10.18+incompatible
 	github.com/pkg/errors v0.9.1
 	github.com/tonistiigi/fsutil v0.0.0-00010101000000-000000000000
