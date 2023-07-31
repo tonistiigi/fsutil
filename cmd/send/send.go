@@ -18,7 +18,11 @@ func main() {
 	ctx := context.Background()
 	s := util.NewProtoStream(ctx, os.Stdin, os.Stdout)
 
-	if err := fsutil.Send(ctx, s, fsutil.NewFS(flag.Args()[0], nil), nil); err != nil {
+	fs, err := fsutil.NewFS(flag.Args()[0])
+	if err != nil {
+		panic(err)
+	}
+	if err := fsutil.Send(ctx, s, fs, nil); err != nil {
 		panic(err)
 	}
 }

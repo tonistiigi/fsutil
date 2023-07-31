@@ -26,6 +26,8 @@ func TestInvalidExcludePatterns(t *testing.T) {
 	}))
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
+	fs, err := NewFS(d)
+	assert.NoError(t, err)
 
 	dest := t.TempDir()
 
@@ -37,7 +39,7 @@ func TestInvalidExcludePatterns(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		err := Send(ctx, s1, NewFS(d, &WalkOpt{ExcludePatterns: []string{"!"}}), nil)
+		err := Send(ctx, s1, NewFilterFS(fs, &FilterOpt{ExcludePatterns: []string{"!"}}), nil)
 		assert.Contains(t, err.Error(), "invalid excludepatterns")
 		return err
 	})
@@ -72,6 +74,8 @@ func TestCopyWithSubDir(t *testing.T) {
 	}))
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
+	fs, err := NewFS(d)
+	assert.NoError(t, err)
 
 	dest := t.TempDir()
 
@@ -80,7 +84,7 @@ func TestCopyWithSubDir(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		subdir, err := SubDirFS([]Dir{{FS: NewFS(d, &WalkOpt{}), Stat: types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
+		subdir, err := SubDirFS([]Dir{{FS: fs, Stat: types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
 		if err != nil {
 			return err
 		}
@@ -105,6 +109,8 @@ func TestCopyDirectoryTimestamps(t *testing.T) {
 	}))
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
+	fs, err := NewFS(d)
+	assert.NoError(t, err)
 
 	timestamp := time.Unix(0, 0)
 	require.NoError(t, os.Chtimes(filepath.Join(d, "foo"), timestamp, timestamp))
@@ -116,7 +122,7 @@ func TestCopyDirectoryTimestamps(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, NewFS(d, nil), nil)
+		return Send(ctx, s1, fs, nil)
 	})
 	eg.Go(func() error {
 		return Receive(ctx, s2, dest, ReceiveOpt{})
@@ -155,9 +161,14 @@ func TestCopySwitchDirToFile(t *testing.T) {
 		eg, ctx := errgroup.WithContext(context.Background())
 		s1, s2 := sockPairProto(ctx)
 
+		fs, err := NewFS(src)
+		if err != nil {
+			return nil, err
+		}
+
 		eg.Go(func() error {
 			defer s1.(*fakeConnProto).closeSend()
-			return Send(ctx, s1, NewFS(src, &WalkOpt{
+			return Send(ctx, s1, NewFilterFS(fs, &FilterOpt{
 				Map: func(_ string, s *types.Stat) MapResult {
 					s.Uid = 0
 					s.Gid = 0
@@ -213,6 +224,8 @@ func TestCopySimple(t *testing.T) {
 	}))
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
+	fs, err := NewFS(d)
+	assert.NoError(t, err)
 
 	dest := t.TempDir()
 
@@ -226,7 +239,7 @@ func TestCopySimple(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, NewFS(d, &WalkOpt{
+		return Send(ctx, s1, NewFilterFS(fs, &FilterOpt{
 			Map: func(_ string, s *types.Stat) MapResult {
 				s.Uid = 0
 				s.Gid = 0
@@ -304,7 +317,7 @@ file zzz.aa
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, NewFS(d, &WalkOpt{
+		return Send(ctx, s1, NewFilterFS(fs, &FilterOpt{
 			Map: func(_ string, s *types.Stat) MapResult {
 				s.Uid = 0
 				s.Gid = 0

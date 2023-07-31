@@ -2,19 +2,19 @@ package fsutil
 
 import (
 	"context"
+	"io"
 	gofs "io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
 )
 
-type WalkOpt struct {
+type FilterOpt struct {
 	IncludePatterns []string
 	ExcludePatterns []string
 	// FollowPaths contains symlinks that are resolved into include patterns
@@ -43,31 +43,36 @@ const (
 	MapResultSkipDir
 )
 
-func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) error {
-	root, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		return errors.WithStack(&os.PathError{Op: "resolve", Path: root, Err: err})
-	}
-	rootFI, err := os.Stat(root)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	if !rootFI.IsDir() {
-		return errors.WithStack(&os.PathError{Op: "walk", Path: root, Err: syscall.ENOTDIR})
-	}
+type filterFS struct {
+	fs  FS
+	opt *FilterOpt
+}
 
+func NewFilterFS(fs FS, opt *FilterOpt) FS {
+	if opt == nil {
+		return fs
+	}
+	return &filterFS{fs, opt}
+}
+
+func (fs *filterFS) Open(p string) (io.ReadCloser, error) {
+	return fs.fs.Open(p)
+}
+
+func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc) error {
 	var (
 		includePatterns []string
 		includeMatcher  *patternmatcher.PatternMatcher
 		excludeMatcher  *patternmatcher.PatternMatcher
+		err             error
 	)
 
-	if opt != nil && opt.IncludePatterns != nil {
-		includePatterns = make([]string, len(opt.IncludePatterns))
-		copy(includePatterns, opt.IncludePatterns)
+	if fs.opt != nil && fs.opt.IncludePatterns != nil {
+		includePatterns = make([]string, len(fs.opt.IncludePatterns))
+		copy(includePatterns, fs.opt.IncludePatterns)
 	}
-	if opt != nil && opt.FollowPaths != nil {
-		targets, err := FollowLinks(p, opt.FollowPaths)
+	if fs.opt != nil && fs.opt.FollowPaths != nil {
+		targets, err := FollowLinks(fs.fs, fs.opt.FollowPaths)
 		if err != nil {
 			return err
 		}
@@ -86,7 +91,7 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 	if len(includePatterns) != 0 {
 		includeMatcher, err = patternmatcher.New(includePatterns)
 		if err != nil {
-			return errors.Wrapf(err, "invalid includepatterns: %s", opt.IncludePatterns)
+			return errors.Wrapf(err, "invalid includepatterns: %s", fs.opt.IncludePatterns)
 		}
 
 		for _, p := range includeMatcher.Patterns() {
@@ -99,10 +104,10 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 	}
 
 	onlyPrefixExcludeExceptions := true
-	if opt != nil && opt.ExcludePatterns != nil {
-		excludeMatcher, err = patternmatcher.New(opt.ExcludePatterns)
+	if fs.opt != nil && fs.opt.ExcludePatterns != nil {
+		excludeMatcher, err = patternmatcher.New(fs.opt.ExcludePatterns)
 		if err != nil {
-			return errors.Wrapf(err, "invalid excludepatterns: %s", opt.ExcludePatterns)
+			return errors.Wrapf(err, "invalid excludepatterns: %s", fs.opt.ExcludePatterns)
 		}
 
 		for _, p := range excludeMatcher.Patterns() {
@@ -114,9 +119,7 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 	}
 
 	type visitedDir struct {
-		fi               os.FileInfo
-		path             string
-		origpath         string
+		entry            gofs.DirEntry
 		pathWithSep      string
 		includeMatchInfo patternmatcher.MatchInfo
 		excludeMatchInfo patternmatcher.MatchInfo
@@ -126,28 +129,16 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 	// used only for include/exclude handling
 	var parentDirs []visitedDir
 
-	seenFiles := make(map[uint64]string)
-	return filepath.WalkDir(root, func(path string, dirEntry gofs.DirEntry, walkErr error) (retErr error) {
+	return fs.fs.Walk(ctx, target, func(path string, dirEntry gofs.DirEntry, walkErr error) (retErr error) {
 		defer func() {
 			if retErr != nil && isNotExist(retErr) {
 				retErr = filepath.SkipDir
 			}
 		}()
 
-		origpath := path
-		path, err = filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		// Skip root
-		if path == "." {
-			return nil
-		}
-
 		var (
 			dir   visitedDir
 			isDir bool
-			fi    gofs.FileInfo
 		)
 		if dirEntry != nil {
 			isDir = dirEntry.IsDir()
@@ -163,15 +154,8 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 			}
 
 			if isDir {
-				fi, err = dirEntry.Info()
-				if err != nil {
-					return err
-				}
-
 				dir = visitedDir{
-					fi:          fi,
-					path:        path,
-					origpath:    origpath,
+					entry:       dirEntry,
 					pathWithSep: path + string(filepath.Separator),
 				}
 			}
@@ -275,25 +259,21 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 
 		dir.calledFn = true
 
-		// The FileInfo might have already been read further up.
-		if fi == nil {
-			fi, err = dirEntry.Info()
-			if err != nil {
-				return err
-			}
-		}
-
-		stat, err := mkstat(origpath, path, fi, seenFiles)
+		fi, err := dirEntry.Info()
 		if err != nil {
 			return err
+		}
+		stat, ok := fi.Sys().(*types.Stat)
+		if !ok {
+			return errors.WithStack(&os.PathError{Path: path, Err: syscall.EBADMSG, Op: "fileinfo without stat info"})
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if opt != nil && opt.Map != nil {
-				result := opt.Map(stat.Path, stat)
+			if fs.opt != nil && fs.opt.Map != nil {
+				result := fs.opt.Map(stat.Path, stat)
 				if result == MapResultSkipDir {
 					return filepath.SkipDir
 				} else if result == MapResultExclude {
@@ -304,9 +284,13 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 				if parentDir.calledFn {
 					continue
 				}
-				parentStat, err := mkstat(parentDir.origpath, parentDir.path, parentDir.fi, seenFiles)
+				parentFi, err := parentDir.entry.Info()
 				if err != nil {
 					return err
+				}
+				parentStat, ok := parentFi.Sys().(*types.Stat)
+				if !ok {
+					return errors.WithStack(&os.PathError{Path: path, Err: syscall.EBADMSG, Op: "fileinfo without stat info"})
 				}
 
 				select {
@@ -314,24 +298,50 @@ func Walk(ctx context.Context, p string, opt *WalkOpt, fn filepath.WalkFunc) err
 					return ctx.Err()
 				default:
 				}
-				if opt != nil && opt.Map != nil {
-					result := opt.Map(parentStat.Path, parentStat)
+				if fs.opt != nil && fs.opt.Map != nil {
+					result := fs.opt.Map(parentStat.Path, parentStat)
 					if result == MapResultSkipDir || result == MapResultExclude {
 						continue
 					}
 				}
 
-				if err := fn(parentStat.Path, &StatInfo{parentStat}, nil); err != nil {
+				if err := fn(parentStat.Path, &DirEntryInfo{Stat: parentStat}, nil); err != nil {
 					return err
 				}
 				parentDirs[i].calledFn = true
 			}
-			if err := fn(stat.Path, &StatInfo{stat}, nil); err != nil {
+			if err := fn(stat.Path, &DirEntryInfo{Stat: stat}, nil); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+}
+
+func Walk(ctx context.Context, p string, opt *FilterOpt, fn filepath.WalkFunc) error {
+	f, err := NewFS(p)
+	if err != nil {
+		return err
+	}
+	return NewFilterFS(f, opt).Walk(ctx, "/", func(path string, d gofs.DirEntry, err error) error {
+		var info gofs.FileInfo
+		if d != nil {
+			var err2 error
+			info, err2 = d.Info()
+			if err == nil {
+				err = err2
+			}
+		}
+		return fn(path, info, err)
+	})
+}
+
+func WalkDir(ctx context.Context, p string, opt *FilterOpt, fn gofs.WalkDirFunc) error {
+	f, err := NewFS(p)
+	if err != nil {
+		return err
+	}
+	return NewFilterFS(f, opt).Walk(ctx, "/", fn)
 }
 
 func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
@@ -342,29 +352,6 @@ func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
 	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"**")
 	patStr = strings.TrimSuffix(patStr, string(filepath.Separator)+"*")
 	return patStr
-}
-
-type StatInfo struct {
-	*types.Stat
-}
-
-func (s *StatInfo) Name() string {
-	return filepath.Base(s.Stat.Path)
-}
-func (s *StatInfo) Size() int64 {
-	return s.Stat.Size_
-}
-func (s *StatInfo) Mode() os.FileMode {
-	return os.FileMode(s.Stat.Mode)
-}
-func (s *StatInfo) ModTime() time.Time {
-	return time.Unix(s.Stat.ModTime/1e9, s.Stat.ModTime%1e9)
-}
-func (s *StatInfo) IsDir() bool {
-	return s.Mode().IsDir()
-}
-func (s *StatInfo) Sys() interface{} {
-	return s.Stat
 }
 
 func isNotExist(err error) bool {
