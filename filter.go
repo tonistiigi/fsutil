@@ -15,12 +15,22 @@ import (
 )
 
 type FilterOpt struct {
+	// IncludePatterns requires that the path matches at least one of the
+	// specified patterns.
 	IncludePatterns []string
+
+	// ExcludePatterns requires that the path does not match any of the
+	// specified patterns.
 	ExcludePatterns []string
-	// FollowPaths contains symlinks that are resolved into include patterns
-	// before performing the fs walk
+
+	// FollowPaths contains symlinks that are resolved into IncludePatterns
+	// at the time of the call to NewFilterFS.
 	FollowPaths []string
-	Map         MapFunc
+
+	// Map is called for each path that is included in the result.
+	// The function can modify the stat info for each element, while the result
+	// of the function controls both how Walk continues.
+	Map MapFunc
 }
 
 type MapFunc func(string, *types.Stat) MapResult
@@ -54,6 +64,16 @@ type filterFS struct {
 	mapFn MapFunc
 }
 
+// NewFilterFS creates a new FS that filters the given FS using the given
+// FilterOpt.
+
+// The returned FS will not contain any paths that do not match the provided
+// include and exclude patterns, or that are are exlcluded using the mapping
+// function.
+//
+// The FS is assumed to be a snapshot of the filesystem at the time of the
+// call to NewFilterFS. If the underlying filesystem changes, calls to the
+// underlying FS may be inconsistent.
 func NewFilterFS(fs FS, opt *FilterOpt) (FS, error) {
 	if opt == nil {
 		return fs, nil

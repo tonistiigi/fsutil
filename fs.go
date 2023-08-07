@@ -21,6 +21,7 @@ type FS interface {
 	Open(string) (io.ReadCloser, error)
 }
 
+// NewFS creates a new FS from a root directory on the host filesystem.
 func NewFS(root string) (FS, error) {
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {
