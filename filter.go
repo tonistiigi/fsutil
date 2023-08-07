@@ -44,37 +44,30 @@ const (
 )
 
 type filterFS struct {
-	fs  FS
-	opt *FilterOpt
+	fs FS
+
+	includeMatcher              *patternmatcher.PatternMatcher
+	excludeMatcher              *patternmatcher.PatternMatcher
+	onlyPrefixIncludes          bool
+	onlyPrefixExcludeExceptions bool
+
+	mapFn MapFunc
 }
 
-func NewFilterFS(fs FS, opt *FilterOpt) FS {
+func NewFilterFS(fs FS, opt *FilterOpt) (FS, error) {
 	if opt == nil {
-		return fs
+		return fs, nil
 	}
-	return &filterFS{fs, opt}
-}
 
-func (fs *filterFS) Open(p string) (io.ReadCloser, error) {
-	return fs.fs.Open(p)
-}
-
-func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc) error {
-	var (
-		includePatterns []string
-		includeMatcher  *patternmatcher.PatternMatcher
-		excludeMatcher  *patternmatcher.PatternMatcher
-		err             error
-	)
-
-	if fs.opt != nil && fs.opt.IncludePatterns != nil {
-		includePatterns = make([]string, len(fs.opt.IncludePatterns))
-		copy(includePatterns, fs.opt.IncludePatterns)
+	var includePatterns []string
+	if opt.IncludePatterns != nil {
+		includePatterns = make([]string, len(opt.IncludePatterns))
+		copy(includePatterns, opt.IncludePatterns)
 	}
-	if fs.opt != nil && fs.opt.FollowPaths != nil {
-		targets, err := FollowLinks(fs.fs, fs.opt.FollowPaths)
+	if opt.FollowPaths != nil {
+		targets, err := FollowLinks(fs, opt.FollowPaths)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if targets != nil {
 			includePatterns = append(includePatterns, targets...)
@@ -87,11 +80,18 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 		patternChars += `\`
 	}
 
-	onlyPrefixIncludes := true
-	if len(includePatterns) != 0 {
+	var (
+		includeMatcher              *patternmatcher.PatternMatcher
+		excludeMatcher              *patternmatcher.PatternMatcher
+		err                         error
+		onlyPrefixIncludes          = true
+		onlyPrefixExcludeExceptions = true
+	)
+
+	if len(includePatterns) > 0 {
 		includeMatcher, err = patternmatcher.New(includePatterns)
 		if err != nil {
-			return errors.Wrapf(err, "invalid includepatterns: %s", fs.opt.IncludePatterns)
+			return nil, errors.Wrapf(err, "invalid includepatterns: %s", opt.IncludePatterns)
 		}
 
 		for _, p := range includeMatcher.Patterns() {
@@ -103,11 +103,10 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 
 	}
 
-	onlyPrefixExcludeExceptions := true
-	if fs.opt != nil && fs.opt.ExcludePatterns != nil {
-		excludeMatcher, err = patternmatcher.New(fs.opt.ExcludePatterns)
+	if len(opt.ExcludePatterns) > 0 {
+		excludeMatcher, err = patternmatcher.New(opt.ExcludePatterns)
 		if err != nil {
-			return errors.Wrapf(err, "invalid excludepatterns: %s", fs.opt.ExcludePatterns)
+			return nil, errors.Wrapf(err, "invalid excludepatterns: %s", opt.ExcludePatterns)
 		}
 
 		for _, p := range excludeMatcher.Patterns() {
@@ -118,6 +117,39 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 		}
 	}
 
+	return &filterFS{
+		fs:                          fs,
+		includeMatcher:              includeMatcher,
+		excludeMatcher:              excludeMatcher,
+		onlyPrefixIncludes:          onlyPrefixIncludes,
+		onlyPrefixExcludeExceptions: onlyPrefixExcludeExceptions,
+		mapFn:                       opt.Map,
+	}, nil
+}
+
+func (fs *filterFS) Open(p string) (io.ReadCloser, error) {
+	if fs.includeMatcher != nil {
+		m, err := fs.includeMatcher.MatchesOrParentMatches(p)
+		if err != nil {
+			return nil, err
+		}
+		if !m {
+			return nil, errors.Wrapf(os.ErrNotExist, "open %s", p)
+		}
+	}
+	if fs.excludeMatcher != nil {
+		m, err := fs.excludeMatcher.MatchesOrParentMatches(p)
+		if err != nil {
+			return nil, err
+		}
+		if m {
+			return nil, errors.Wrapf(os.ErrNotExist, "open %s", p)
+		}
+	}
+	return fs.fs.Open(p)
+}
+
+func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc) error {
 	type visitedDir struct {
 		entry            gofs.DirEntry
 		pathWithSep      string
@@ -144,7 +176,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 			isDir = dirEntry.IsDir()
 		}
 
-		if includeMatcher != nil || excludeMatcher != nil {
+		if fs.includeMatcher != nil || fs.excludeMatcher != nil {
 			for len(parentDirs) != 0 {
 				lastParentDir := parentDirs[len(parentDirs)-1].pathWithSep
 				if strings.HasPrefix(path, lastParentDir) {
@@ -163,12 +195,12 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 
 		skip := false
 
-		if includeMatcher != nil {
+		if fs.includeMatcher != nil {
 			var parentIncludeMatchInfo patternmatcher.MatchInfo
 			if len(parentDirs) != 0 {
 				parentIncludeMatchInfo = parentDirs[len(parentDirs)-1].includeMatchInfo
 			}
-			m, matchInfo, err := includeMatcher.MatchesUsingParentResults(path, parentIncludeMatchInfo)
+			m, matchInfo, err := fs.includeMatcher.MatchesUsingParentResults(path, parentIncludeMatchInfo)
 			if err != nil {
 				return errors.Wrap(err, "failed to match includepatterns")
 			}
@@ -178,11 +210,11 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 			}
 
 			if !m {
-				if isDir && onlyPrefixIncludes {
+				if isDir && fs.onlyPrefixIncludes {
 					// Optimization: we can skip walking this dir if no include
 					// patterns could match anything inside it.
 					dirSlash := path + string(filepath.Separator)
-					for _, pat := range includeMatcher.Patterns() {
+					for _, pat := range fs.includeMatcher.Patterns() {
 						if pat.Exclusion() {
 							continue
 						}
@@ -198,12 +230,12 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 			}
 		}
 
-		if excludeMatcher != nil {
+		if fs.excludeMatcher != nil {
 			var parentExcludeMatchInfo patternmatcher.MatchInfo
 			if len(parentDirs) != 0 {
 				parentExcludeMatchInfo = parentDirs[len(parentDirs)-1].excludeMatchInfo
 			}
-			m, matchInfo, err := excludeMatcher.MatchesUsingParentResults(path, parentExcludeMatchInfo)
+			m, matchInfo, err := fs.excludeMatcher.MatchesUsingParentResults(path, parentExcludeMatchInfo)
 			if err != nil {
 				return errors.Wrap(err, "failed to match excludepatterns")
 			}
@@ -213,16 +245,16 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 			}
 
 			if m {
-				if isDir && onlyPrefixExcludeExceptions {
+				if isDir && fs.onlyPrefixExcludeExceptions {
 					// Optimization: we can skip walking this dir if no
 					// exceptions to exclude patterns could match anything
 					// inside it.
-					if !excludeMatcher.Exclusions() {
+					if !fs.excludeMatcher.Exclusions() {
 						return filepath.SkipDir
 					}
 
 					dirSlash := path + string(filepath.Separator)
-					for _, pat := range excludeMatcher.Patterns() {
+					for _, pat := range fs.excludeMatcher.Patterns() {
 						if !pat.Exclusion() {
 							continue
 						}
@@ -245,7 +277,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 			return walkErr
 		}
 
-		if includeMatcher != nil || excludeMatcher != nil {
+		if fs.includeMatcher != nil || fs.excludeMatcher != nil {
 			defer func() {
 				if isDir {
 					parentDirs = append(parentDirs, dir)
@@ -272,8 +304,8 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if fs.opt != nil && fs.opt.Map != nil {
-				result := fs.opt.Map(stat.Path, stat)
+			if fs.mapFn != nil {
+				result := fs.mapFn(stat.Path, stat)
 				if result == MapResultSkipDir {
 					return filepath.SkipDir
 				} else if result == MapResultExclude {
@@ -298,8 +330,8 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 					return ctx.Err()
 				default:
 				}
-				if fs.opt != nil && fs.opt.Map != nil {
-					result := fs.opt.Map(parentStat.Path, parentStat)
+				if fs.mapFn != nil {
+					result := fs.mapFn(parentStat.Path, parentStat)
 					if result == MapResultSkipDir || result == MapResultExclude {
 						continue
 					}
@@ -323,7 +355,11 @@ func Walk(ctx context.Context, p string, opt *FilterOpt, fn filepath.WalkFunc) e
 	if err != nil {
 		return err
 	}
-	return NewFilterFS(f, opt).Walk(ctx, "/", func(path string, d gofs.DirEntry, err error) error {
+	f, err = NewFilterFS(f, opt)
+	if err != nil {
+		return err
+	}
+	return f.Walk(ctx, "/", func(path string, d gofs.DirEntry, err error) error {
 		var info gofs.FileInfo
 		if d != nil {
 			var err2 error
@@ -341,7 +377,11 @@ func WalkDir(ctx context.Context, p string, opt *FilterOpt, fn gofs.WalkDirFunc)
 	if err != nil {
 		return err
 	}
-	return NewFilterFS(f, opt).Walk(ctx, "/", fn)
+	f, err = NewFilterFS(f, opt)
+	if err != nil {
+		return err
+	}
+	return f.Walk(ctx, "/", fn)
 }
 
 func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {

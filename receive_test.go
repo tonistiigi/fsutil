@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"hash"
 	"io"
+	gofs "io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -20,14 +21,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func TestInvalidExcludePatterns(t *testing.T) {
-	d, err := tmpDir(changeStream([]string{
-		"ADD foo file data1",
-	}))
-	assert.NoError(t, err)
-	defer os.RemoveAll(d)
-	fs, err := NewFS(d)
-	assert.NoError(t, err)
+func TestSendError(t *testing.T) {
+	fs := &testErrFS{err: errors.New("foo bar")}
 
 	dest := t.TempDir()
 
@@ -39,8 +34,8 @@ func TestInvalidExcludePatterns(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		err := Send(ctx, s1, NewFilterFS(fs, &FilterOpt{ExcludePatterns: []string{"!"}}), nil)
-		assert.Contains(t, err.Error(), "invalid excludepatterns")
+		err := Send(ctx, s1, fs, nil)
+		assert.Contains(t, err.Error(), "foo bar")
 		return err
 	})
 	eg.Go(func() error {
@@ -49,7 +44,7 @@ func TestInvalidExcludePatterns(t *testing.T) {
 			ContentHasher: simpleSHA256Hasher,
 		})
 		assert.Contains(t, err.Error(), "error from sender:")
-		assert.Contains(t, err.Error(), "invalid excludepatterns")
+		assert.Contains(t, err.Error(), "foo bar")
 		return err
 	})
 
@@ -60,8 +55,8 @@ func TestInvalidExcludePatterns(t *testing.T) {
 	select {
 	case <-time.After(15 * time.Second):
 		t.Fatal("timeout")
-	case err = <-errCh:
-		assert.Contains(t, err.Error(), "invalid excludepatterns")
+	case err := <-errCh:
+		assert.Contains(t, err.Error(), "foo bar")
 	}
 }
 
@@ -165,16 +160,20 @@ func TestCopySwitchDirToFile(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
+		fs, err = NewFilterFS(fs, &FilterOpt{
+			Map: func(_ string, s *types.Stat) MapResult {
+				s.Uid = 0
+				s.Gid = 0
+				return MapResultKeep
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
 
 		eg.Go(func() error {
 			defer s1.(*fakeConnProto).closeSend()
-			return Send(ctx, s1, NewFilterFS(fs, &FilterOpt{
-				Map: func(_ string, s *types.Stat) MapResult {
-					s.Uid = 0
-					s.Gid = 0
-					return MapResultKeep
-				},
-			}), nil)
+			return Send(ctx, s1, fs, nil)
 		})
 		eg.Go(func() error {
 			return Receive(ctx, s2, dest, ReceiveOpt{
@@ -226,6 +225,14 @@ func TestCopySimple(t *testing.T) {
 	defer os.RemoveAll(d)
 	fs, err := NewFS(d)
 	assert.NoError(t, err)
+	fs, err = NewFilterFS(fs, &FilterOpt{
+		Map: func(_ string, s *types.Stat) MapResult {
+			s.Uid = 0
+			s.Gid = 0
+			return MapResultKeep
+		},
+	})
+	assert.NoError(t, err)
 
 	dest := t.TempDir()
 
@@ -239,13 +246,7 @@ func TestCopySimple(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, NewFilterFS(fs, &FilterOpt{
-			Map: func(_ string, s *types.Stat) MapResult {
-				s.Uid = 0
-				s.Gid = 0
-				return MapResultKeep
-			},
-		}), nil)
+		return Send(ctx, s1, fs, nil)
 	})
 	eg.Go(func() error {
 		return Receive(ctx, s2, dest, ReceiveOpt{
@@ -317,13 +318,7 @@ file zzz.aa
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, NewFilterFS(fs, &FilterOpt{
-			Map: func(_ string, s *types.Stat) MapResult {
-				s.Uid = 0
-				s.Gid = 0
-				return MapResultKeep
-			},
-		}), nil)
+		return Send(ctx, s1, fs, nil)
 	})
 	eg.Go(func() error {
 		return Receive(ctx, s2, dest, ReceiveOpt{
@@ -514,4 +509,16 @@ func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 	}
 	h.Write(dt)
 	return h, nil
+}
+
+type testErrFS struct {
+	err error
+}
+
+func (e *testErrFS) Walk(ctx context.Context, p string, fn gofs.WalkDirFunc) error {
+	return errors.Wrap(e.err, "invalid walk")
+}
+
+func (e *testErrFS) Open(p string) (io.ReadCloser, error) {
+	return nil, errors.Wrap(e.err, "invalid open")
 }
