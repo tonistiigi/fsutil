@@ -25,7 +25,7 @@ func main() {
 		excludes = strings.Split(string(dt), "\n")
 	}
 
-	if err := fsutil.Walk(context.Background(), flag.Args()[0], &fsutil.WalkOpt{
+	if err := fsutil.Walk(context.Background(), flag.Args()[0], &fsutil.FilterOpt{
 		ExcludePatterns: excludes,
 	}, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {

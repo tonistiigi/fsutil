@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	gofs "io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -34,6 +36,18 @@ file foo2
 
 }
 
+func TestInvalidExcludePatterns(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo file data1",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	fs, err := NewFS(d)
+	assert.NoError(t, err)
+	_, err = NewFilterFS(fs, &FilterOpt{ExcludePatterns: []string{"!"}})
+	assert.Error(t, err)
+}
+
 func TestWalkerInclude(t *testing.T) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD bar dir",
@@ -43,7 +57,7 @@ func TestWalkerInclude(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"bar"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -53,7 +67,7 @@ file bar/foo
 `, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"bar/foo"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -63,7 +77,7 @@ file bar/foo
 `, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"b*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -73,7 +87,7 @@ file bar/foo
 `, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"bar/f*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -83,7 +97,7 @@ file bar/foo
 `, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"bar/g*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -91,7 +105,7 @@ file bar/foo
 	assert.Empty(t, b.Bytes())
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"f*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -100,7 +114,7 @@ file bar/foo
 `, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"b*/f*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -110,7 +124,7 @@ file bar/foo
 `, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"b*/foo"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -120,7 +134,7 @@ file bar/foo
 `, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"b*/"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -140,7 +154,7 @@ func TestWalkerExclude(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		ExcludePatterns: []string{"foo*", "!foo/bar2"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -166,7 +180,7 @@ func TestWalkerFollowLinks(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		FollowPaths: []string{"foo/l*", "bar"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -193,7 +207,7 @@ func TestWalkerFollowLinksToRoot(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		FollowPaths: []string{"foo"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -216,7 +230,7 @@ func TestWalkerMap(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		Map: func(_ string, s *types.Stat) MapResult {
 			if strings.HasPrefix(s.Path, "foo") {
 				s.Path = "_" + s.Path
@@ -247,7 +261,7 @@ func TestWalkerMapSkipDir(t *testing.T) {
 	// bother walking directories we don't care about.
 	walked := []string{}
 	b := &bytes.Buffer{}
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		Map: func(_ string, s *types.Stat) MapResult {
 			walked = append(walked, s.Path)
 			if strings.HasPrefix(s.Path, "excludeDir") {
@@ -288,13 +302,13 @@ func TestWalkerPermissionDenied(t *testing.T) {
 	}()
 
 	b := &bytes.Buffer{}
-	err = Walk(context.Background(), d, &WalkOpt{}, bufWalk(b))
+	err = Walk(context.Background(), d, &FilterOpt{}, bufWalk(b))
 	if assert.Error(t, err) {
 		assert.Contains(t, err.Error(), "permission denied")
 	}
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		ExcludePatterns: []string{"**/bar"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -302,7 +316,7 @@ func TestWalkerPermissionDenied(t *testing.T) {
 `, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		ExcludePatterns: []string{"**/bar", "!foo/bar/baz"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -310,7 +324,7 @@ func TestWalkerPermissionDenied(t *testing.T) {
 `, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		ExcludePatterns: []string{"**/bar", "!foo/bar"},
 	}, bufWalk(b))
 	if assert.Error(t, err) {
@@ -318,7 +332,7 @@ func TestWalkerPermissionDenied(t *testing.T) {
 	}
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"foo", "!**/bar"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -327,7 +341,39 @@ func TestWalkerPermissionDenied(t *testing.T) {
 }
 
 func bufWalk(buf *bytes.Buffer) filepath.WalkFunc {
-	return func(path string, fi os.FileInfo, err error) error {
+	return func(path string, fi gofs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		stat, ok := fi.Sys().(*types.Stat)
+		if !ok {
+			return errors.Errorf("invalid symlink %s", path)
+		}
+		t := "file"
+		if fi.IsDir() {
+			t = "dir"
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			t = "symlink:" + stat.Linkname
+		}
+		fmt.Fprintf(buf, "%s %s", t, path)
+		if fi.Mode()&os.ModeSymlink == 0 && stat.Linkname != "" {
+			fmt.Fprintf(buf, " >%s", stat.Linkname)
+		}
+		fmt.Fprintln(buf)
+		return nil
+	}
+}
+
+func bufWalkDir(buf *bytes.Buffer) gofs.WalkDirFunc {
+	return func(path string, entry gofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		fi, err := entry.Info()
+		if err != nil {
+			return err
+		}
 		stat, ok := fi.Sys().(*types.Stat)
 		if !ok {
 			return errors.Errorf("invalid symlink %s", path)
@@ -488,14 +534,14 @@ func BenchmarkWalker(b *testing.B) {
 
 			for i := 0; i < b.N; i++ {
 				count := 0
-				walkOpt := &WalkOpt{
+				walkOpt := &FilterOpt{
 					IncludePatterns: []string{scenario.pattern},
 				}
 				if scenario.exclude != "" {
 					walkOpt.ExcludePatterns = []string{scenario.exclude}
 				}
 				err = Walk(context.Background(), tmpdir, walkOpt,
-					func(path string, fi os.FileInfo, err error) error {
+					func(path string, fi gofs.FileInfo, err error) error {
 						count++
 						return nil
 					})
@@ -531,7 +577,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 	b := &bytes.Buffer{}
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -553,7 +599,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	`, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/bar"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -572,7 +618,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	`, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/bar/foo"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -587,7 +633,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	`, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/b*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -608,7 +654,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	`, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/bar/f*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -624,7 +670,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	`, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/bar/g*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -632,7 +678,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	trimEqual(t, ``, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/f*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -652,7 +698,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	`, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/b*/f*"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -668,7 +714,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	`, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/b*/foo"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -683,7 +729,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	`, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/foo/**"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -695,7 +741,7 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 	`, string(b.Bytes()))
 
 	b.Reset()
-	err = Walk(context.Background(), d, &WalkOpt{
+	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/baz"},
 	}, bufWalk(b))
 	assert.NoError(t, err)
@@ -706,6 +752,172 @@ func TestWalkerDoublestarInclude(t *testing.T) {
 		dir a/b/baz
 		dir baz
 	`, string(b.Bytes()))
+}
+
+func TestFSWalk(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo file",
+		"ADD bar dir",
+		"ADD bar/foo2 file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	f, err := NewFS(d)
+	assert.NoError(t, err)
+
+	b := &bytes.Buffer{}
+	err = f.Walk(context.Background(), "", bufWalkDir(b))
+	assert.NoError(t, err)
+	assert.Equal(t, string(b.Bytes()), `dir bar
+file bar/foo2
+file foo
+`)
+
+	b = &bytes.Buffer{}
+	err = f.Walk(context.Background(), "foo", bufWalkDir(b))
+	assert.NoError(t, err)
+	assert.Equal(t, string(b.Bytes()), `file foo
+`)
+
+	b = &bytes.Buffer{}
+	err = f.Walk(context.Background(), "bar", bufWalkDir(b))
+	assert.NoError(t, err)
+	assert.Equal(t, string(b.Bytes()), `dir bar
+file bar/foo2
+`)
+}
+
+func TestFSWalkNested(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/bar file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	f, err := NewFS(d)
+	assert.NoError(t, err)
+
+	f2, err := NewFilterFS(f, &FilterOpt{
+		ExcludePatterns: []string{"foo", "!foo/bar"},
+	})
+	assert.NoError(t, err)
+	b := &bytes.Buffer{}
+	err = f2.Walk(context.Background(), "", bufWalkDir(b))
+	assert.NoError(t, err)
+	assert.Equal(t, string(b.Bytes()), `dir foo
+file foo/bar
+`)
+
+	f2, err = NewFilterFS(f, &FilterOpt{
+		ExcludePatterns: []string{"!foo/bar"},
+	})
+	assert.NoError(t, err)
+	f2, err = NewFilterFS(f2, &FilterOpt{
+		ExcludePatterns: []string{"foo"},
+	})
+	assert.NoError(t, err)
+	b = &bytes.Buffer{}
+	err = f2.Walk(context.Background(), "", bufWalkDir(b))
+	assert.NoError(t, err)
+	assert.Equal(t, string(b.Bytes()), ``)
+
+	f2, err = NewFilterFS(f, &FilterOpt{
+		ExcludePatterns: []string{"foo"},
+	})
+	assert.NoError(t, err)
+	f2, err = NewFilterFS(f2, &FilterOpt{
+		ExcludePatterns: []string{"!foo/bar"},
+	})
+	assert.NoError(t, err)
+	b = &bytes.Buffer{}
+	err = f2.Walk(context.Background(), "", bufWalkDir(b))
+	assert.NoError(t, err)
+	assert.Equal(t, string(b.Bytes()), ``)
+}
+
+func TestFilteredOpen(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo file",
+		"ADD bar file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	f, err := NewFS(d)
+	assert.NoError(t, err)
+
+	f, err = NewFilterFS(f, &FilterOpt{
+		ExcludePatterns: []string{"bar"},
+	})
+	assert.NoError(t, err)
+
+	b := &bytes.Buffer{}
+	err = f.Walk(context.Background(), "", bufWalkDir(b))
+	assert.NoError(t, err)
+	assert.Equal(t, string(b.Bytes()), `file foo
+`)
+
+	r, err := f.Open("foo")
+	assert.NoError(t, err)
+	defer r.Close()
+	dt, err := io.ReadAll(r)
+	assert.NoError(t, err)
+	assert.Equal(t, "", string(dt))
+
+	_, err = f.Open("bar")
+	assert.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestFilteredOpenWildcard(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD baz file",
+		"ADD bar dir",
+		"ADD bar2 file",
+		"ADD bar/foo file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	f, err := NewFS(d)
+	assert.NoError(t, err)
+	f, err = NewFilterFS(f, &FilterOpt{
+		IncludePatterns: []string{"bar*"},
+	})
+	assert.NoError(t, err)
+
+	_, err = f.Open("baz")
+	assert.ErrorIs(t, err, os.ErrNotExist)
+
+	r, err := f.Open("bar2")
+	assert.NoError(t, err)
+	assert.NoError(t, r.Close())
+
+	r, err = f.Open("bar/foo")
+	assert.NoError(t, err)
+	assert.NoError(t, r.Close())
+}
+
+func TestFilteredOpenInvert(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/bar dir",
+		"ADD foo/bar/baz dir",
+		"ADD foo/bar/baz/x file",
+		"ADD foo/bar/baz/y file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	f, err := NewFS(d)
+	assert.NoError(t, err)
+	f, err = NewFilterFS(f, &FilterOpt{
+		ExcludePatterns: []string{"foo", "!foo/bar", "foo/bar/baz", "!foo/bar/baz/x"},
+	})
+	assert.NoError(t, err)
+
+	r, err := f.Open("foo/bar/baz/x")
+	assert.NoError(t, err)
+	assert.NoError(t, r.Close())
+
+	_, err = f.Open("foo/bar/baz/y")
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
 func trimEqual(t assert.TestingT, expected, actual string, msgAndArgs ...interface{}) bool {
