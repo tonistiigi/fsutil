@@ -3,11 +3,11 @@ module github.com/tonistiigi/fsutil/bench
 go 1.19
 
 require (
-	github.com/containerd/continuity v0.3.1-0.20230206214859-2a963a2f56e8
+	github.com/containerd/continuity v0.4.1
 	github.com/docker/docker v20.10.18+incompatible
 	github.com/pkg/errors v0.9.1
 	github.com/tonistiigi/fsutil v0.0.0-00010101000000-000000000000
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	golang.org/x/sync v0.1.0
 )
 
 require (
@@ -26,7 +26,7 @@ require (
 	github.com/opencontainers/runc v1.0.0-rc93 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	go.opencensus.io v0.22.3 // indirect
-	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad // indirect
+	golang.org/x/sys v0.1.0 // indirect
 	google.golang.org/protobuf v1.26.0 // indirect
 )
 
