@@ -56,3 +56,33 @@ func TestCopyDevicesAndFifo(t *testing.T) {
 	assert.NotEqual(t, os.ModeSocket, fi.Mode()&os.ModeSocket) // socket copied as stub
 	assert.Equal(t, os.FileMode(0555), fi.Mode()&0777)
 }
+
+func TestCopySetuid(t *testing.T) {
+	requiresRoot(t)
+
+	t1 := t.TempDir()
+
+	err := mknod(filepath.Join(t1, "char"), unix.S_IFCHR|0444, int(unix.Mkdev(1, 9)))
+	require.NoError(t, err)
+
+	t2 := t.TempDir()
+
+	err = Copy(context.TODO(), t1, ".", t2, ".")
+	require.NoError(t, err)
+
+	fi, err := os.Lstat(filepath.Join(t2, "char"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0444), fi.Mode()&07777)
+
+	t3 := t.TempDir()
+
+	p := 04444
+	err = Copy(context.TODO(), t1, ".", t3, ".", WithCopyInfo(CopyInfo{
+		Mode: &p,
+	}))
+	require.NoError(t, err)
+
+	fi, err = os.Lstat(filepath.Join(t3, "char"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(04444), fi.Mode()&07777)
+}
