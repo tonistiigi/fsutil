@@ -359,6 +359,60 @@ func TestCopySymlinks(t *testing.T) {
 	require.Equal(t, "foo.txt", link)
 }
 
+func TestCopyWithAlwaysReplaceExistingDestPaths(t *testing.T) {
+	destDir := t.TempDir()
+	require.NoError(t, fstest.Apply(
+		fstest.CreateDir("root", 0755),
+		fstest.CreateDir("root/overwritedir", 0755),
+		fstest.CreateFile("root/overwritedir/subfile", nil, 0755),
+		fstest.CreateFile("root/overwritefile", nil, 0755),
+		fstest.Symlink("dir", "root/overwritesymlink"),
+		fstest.CreateDir("root/dir", 0755),
+		fstest.CreateFile("root/dir/dirfile1", nil, 0755),
+		fstest.CreateDir("root/dir/overwritesubdir", 0755),
+		fstest.CreateFile("root/dir/overwritesubfile", nil, 0755),
+		fstest.Symlink("dirfile1", "root/dir/overwritesymlink"),
+	).Apply(destDir))
+
+	srcDir := t.TempDir()
+	require.NoError(t, fstest.Apply(
+		fstest.CreateDir("root", 0755),
+		fstest.CreateFile("root/overwritedir", nil, 0755),
+		fstest.CreateDir("root/overwritefile", 0755),
+		fstest.CreateFile("root/overwritefile/foo", nil, 0755),
+		fstest.CreateDir("root/overwritesymlink", 0755),
+		fstest.CreateDir("root/dir", 0755),
+		fstest.CreateFile("root/dir/dirfile2", nil, 0755),
+		fstest.CreateFile("root/dir/overwritesubdir", nil, 0755),
+		fstest.CreateDir("root/dir/overwritesubfile", 0755),
+		fstest.CreateDir("root/dir/overwritesymlink", 0755),
+	).Apply(srcDir))
+
+	expectedDir := t.TempDir()
+	require.NoError(t, fstest.Apply(
+		fstest.CreateDir("root", 0755),
+		fstest.CreateFile("root/overwritedir", nil, 0755),
+		fstest.CreateDir("root/overwritefile", 0755),
+		fstest.CreateFile("root/overwritefile/foo", nil, 0755),
+		fstest.CreateDir("root/overwritesymlink", 0755),
+		fstest.CreateDir("root/dir", 0755),
+		fstest.CreateFile("root/dir/dirfile1", nil, 0755),
+		fstest.CreateFile("root/dir/dirfile2", nil, 0755),
+		fstest.CreateFile("root/dir/overwritesubdir", nil, 0755),
+		fstest.CreateDir("root/dir/overwritesubfile", 0755),
+		fstest.CreateDir("root/dir/overwritesymlink", 0755),
+	).Apply(expectedDir))
+
+	err := Copy(context.TODO(), srcDir, "root", destDir, "root", WithCopyInfo(CopyInfo{
+		AlwaysReplaceExistingDestPaths: true,
+		CopyDirContents:                true,
+	}))
+	require.NoError(t, err)
+
+	err = fstest.CheckDirectoryEqual(destDir, expectedDir)
+	require.NoError(t, err)
+}
+
 func testCopy(t *testing.T, apply fstest.Applier, exp string) error {
 	t1 := t.TempDir()
 	t2 := t.TempDir()
