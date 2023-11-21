@@ -28,7 +28,7 @@ func TestStat(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotZero(t, st.ModTime)
 	st.ModTime = 0
-	assert.Equal(t, &types.Stat{Path: "foo", Mode: 0644, Size_: 5}, st)
+	assert.Equal(t, &types.Stat{Path: "foo", Mode: 0644, Size: 5}, st)
 
 	st, err = Stat(filepath.Join(d, "zzz"))
 	assert.NoError(t, err)
@@ -40,13 +40,13 @@ func TestStat(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotZero(t, st.ModTime)
 	st.ModTime = 0
-	assert.Equal(t, &types.Stat{Path: "aa", Mode: 0644, Size_: 5}, st)
+	assert.Equal(t, &types.Stat{Path: "aa", Mode: 0644, Size: 5}, st)
 
 	st, err = Stat(filepath.Join(d, "zzz/bb/cc/dd"))
 	assert.NoError(t, err)
 	assert.NotZero(t, st.ModTime)
 	st.ModTime = 0
-	assert.Equal(t, &types.Stat{Path: "dd", Mode: uint32(os.ModeSymlink | 0777), Size_: 6, Linkname: "../../"}, st)
+	assert.Equal(t, &types.Stat{Path: "dd", Mode: uint32(os.ModeSymlink | 0777), Size: 6, Linkname: "../../"}, st)
 
 	st, err = Stat(filepath.Join(d, "sock"))
 	assert.NoError(t, err)
