@@ -120,7 +120,9 @@ jobs:
             ${{ runner.os }}-vagrant-
       -
         name: Set up vagrant
-        run: vagrant up
+        run: |
+          vagrant up --no-tty
       -
         name: Test
-        run: vagrant ssh -- "cd /vagrant; go test -buildvcs=false ./..."
+        run: |
+          vagrant ssh -- "cd /vagrant; go test -buildvcs=false ./..."
