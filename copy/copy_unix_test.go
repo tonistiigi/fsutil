@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -72,11 +73,14 @@ func TestCopySetuid(t *testing.T) {
 
 	fi, err := os.Lstat(filepath.Join(t2, "char"))
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0444), fi.Mode()&07777)
+	assert.Equal(t, os.FileMode(0444), fi.Mode().Perm())
+	assert.Equal(t, os.FileMode(0), fi.Mode()&os.ModeSetuid)
+	assert.Equal(t, os.FileMode(0), fi.Mode()&os.ModeSetgid)
+	assert.Equal(t, os.FileMode(0), fi.Mode()&os.ModeSticky)
 
 	t3 := t.TempDir()
 
-	p := 04444
+	p := 0444 | syscall.S_ISUID
 	err = Copy(context.TODO(), t1, ".", t3, ".", WithCopyInfo(CopyInfo{
 		Mode: &p,
 	}))
@@ -84,5 +88,8 @@ func TestCopySetuid(t *testing.T) {
 
 	fi, err = os.Lstat(filepath.Join(t3, "char"))
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(04444), fi.Mode()&07777)
+	assert.Equal(t, os.FileMode(0444), fi.Mode().Perm())
+	assert.Equal(t, os.ModeSetuid, fi.Mode()&os.ModeSetuid)
+	assert.Equal(t, os.FileMode(0), fi.Mode()&os.ModeSetgid)
+	assert.Equal(t, os.FileMode(0), fi.Mode()&os.ModeSticky)
 }
