@@ -66,9 +66,9 @@ type filterFS struct {
 
 // NewFilterFS creates a new FS that filters the given FS using the given
 // FilterOpt.
-
+//
 // The returned FS will not contain any paths that do not match the provided
-// include and exclude patterns, or that are are exlcluded using the mapping
+// include and exclude patterns, or that are are excluded using the mapping
 // function.
 //
 // The FS is assumed to be a snapshot of the filesystem at the time of the
