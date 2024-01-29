@@ -73,14 +73,14 @@ func TestWalkDir(t *testing.T) {
 
 	f, err := SubDirFS([]Dir{
 		{
-			Stat: &types.Stat{
+			Stat: types.Stat{
 				Mode: uint32(os.ModeDir | 0755),
 				Path: "1",
 			},
 			FS: tmpfs,
 		},
 		{
-			Stat: &types.Stat{
+			Stat: types.Stat{
 				Mode: uint32(os.ModeDir | 0755),
 				Path: "2",
 			},
