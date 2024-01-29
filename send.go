@@ -10,7 +10,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 )
 
 var bufPool = sync.Pool{
@@ -168,7 +167,7 @@ func (s *sender) walk(ctx context.Context) error {
 			s.mu.Unlock()
 		}
 		i++
-		s.updateProgress(proto.Size(p), false)
+		s.updateProgress(p.Size(), false)
 		return errors.Wrapf(s.conn.SendMsg(p), "failed to send stat %s", path)
 	})
 	if err != nil {
@@ -196,7 +195,7 @@ func (fs *fileSender) Write(dt []byte) (int, error) {
 	if err := fs.sender.conn.SendMsg(p); err != nil {
 		return 0, err
 	}
-	fs.sender.updateProgress(proto.Size(p), false)
+	fs.sender.updateProgress(p.Size(), false)
 	return len(dt), nil
 }
 

@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestSendError(t *testing.T) {
@@ -80,7 +79,7 @@ func TestCopyWithSubDir(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		subdir, err := SubDirFS([]Dir{{FS: fs, Stat: &types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
+		subdir, err := SubDirFS([]Dir{{FS: fs, Stat: types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
 		if err != nil {
 			return err
 		}
@@ -387,19 +386,6 @@ func sockPairProto(ctx context.Context) (Stream, Stream) {
 }
 
 //nolint:unused
-func clonePacket(from *types.Packet) *types.Packet {
-	var data []byte
-	copy(data, from.Data)
-
-	return &types.Packet{
-		Type: from.Type,
-		Stat: cloneStat(from.Stat),
-		ID:   from.ID,
-		Data: data,
-	}
-}
-
-//nolint:unused
 type fakeConn struct {
 	ctx      context.Context
 	recvChan chan *types.Packet
@@ -413,14 +399,15 @@ func (fc *fakeConn) Context() context.Context {
 
 //nolint:unused
 func (fc *fakeConn) RecvMsg(m interface{}) error {
-	_, ok := m.(*types.Packet)
+	p, ok := m.(*types.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
 	select {
 	case <-fc.ctx.Done():
 		return fc.ctx.Err()
-	case _ = <-fc.recvChan:
+	case p2 := <-fc.recvChan:
+		*p = *p2
 		return nil
 	}
 }
@@ -431,12 +418,12 @@ func (fc *fakeConn) SendMsg(m interface{}) error {
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
-	p2 := clonePacket(p)
+	p2 := *p
 	p2.Data = append([]byte{}, p2.Data...)
 	select {
 	case <-fc.ctx.Done():
 		return fc.ctx.Err()
-	case fc.sendChan <- p2:
+	case fc.sendChan <- &p2:
 		return nil
 	}
 }
@@ -463,7 +450,7 @@ func (fc *fakeConnProto) RecvMsg(m interface{}) error {
 		if !ok {
 			return io.EOF
 		}
-		return proto.Unmarshal(dt, p)
+		return p.Unmarshal(dt)
 	}
 }
 
@@ -472,7 +459,7 @@ func (fc *fakeConnProto) SendMsg(m interface{}) error {
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
 	}
-	dt, err := proto.Marshal(p)
+	dt, err := p.Marshal()
 	if err != nil {
 		return err
 	}
@@ -506,7 +493,7 @@ func (c *changes) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err er
 
 func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 	h := sha256.New()
-	ss := cloneStat(s)
+	ss := *s
 	ss.ModTime = 0
 	// Unlike Linux, on FreeBSD's stat() call returns -1 in st_rdev for regular files
 	ss.Devminor = 0
@@ -516,7 +503,7 @@ func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 		ss.Mode = ss.Mode | 0777
 	}
 
-	dt, err := proto.Marshal(ss)
+	dt, err := ss.Marshal()
 	if err != nil {
 		return nil, err
 	}
