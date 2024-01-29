@@ -51,12 +51,12 @@ func TestWriterSimple(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `dir bar
+	assert.Equal(t, `dir bar
 file bar/foo
 symlink:../foo bar/foo2
 file foo
 file foo2 >foo
-`)
+`, b.String())
 
 }
 
@@ -88,9 +88,9 @@ func TestWriterFileToDir(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `dir foo
+	assert.Equal(t, `dir foo
 file foo/bar
-`)
+`, b.String())
 }
 
 func TestWriterDirToFile(t *testing.T) {
@@ -121,8 +121,8 @@ func TestWriterDirToFile(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `file foo
-`)
+	assert.Equal(t, `file foo
+`, b.String())
 }
 
 func TestWalkerWriterSimple(t *testing.T) {
@@ -150,12 +150,12 @@ func TestWalkerWriterSimple(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `dir bar
+	assert.Equal(t, filepath.FromSlash(`dir bar
 file bar/foo
 symlink:../foo bar/foo2
 file foo
 file foo2
-`)
+`), b.String())
 
 	dt, err := os.ReadFile(filepath.Join(dest, "foo"))
 	assert.NoError(t, err)

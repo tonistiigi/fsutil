@@ -96,7 +96,7 @@ func NewFilterFS(fs FS, opt *FilterOpt) (FS, error) {
 	}
 
 	patternChars := "*[]?^"
-	if os.PathSeparator != '\\' {
+	if filepath.Separator != '\\' {
 		patternChars += `\`
 	}
 

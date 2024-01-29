@@ -3,6 +3,7 @@ package fsutil
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -210,7 +211,7 @@ func parseChange(str string) *change {
 	default:
 		panic(errStr)
 	}
-	c.path = f[1]
+	c.path = filepath.FromSlash(f[1])
 	st := &types.Stat{}
 	switch f[2] {
 	case "file":

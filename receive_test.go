@@ -9,6 +9,7 @@ import (
 	gofs "io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -144,10 +145,10 @@ func TestCopySwitchDirToFile(t *testing.T) {
 
 	dest, err := tmpDir(changeStream([]string{
 		"ADD foo dir",
-		"ADD foo/bar dile data2",
+		"ADD foo/bar file data2",
 	}))
 	assert.NoError(t, err)
-	defer os.RemoveAll(d)
+	defer os.RemoveAll(dest)
 
 	copy := func(src, dest string) (*changes, error) {
 		ts := newNotificationBuffer()
@@ -180,8 +181,13 @@ func TestCopySwitchDirToFile(t *testing.T) {
 				NotifyHashed:  chs.HandleChange,
 				ContentHasher: simpleSHA256Hasher,
 				Filter: func(_ string, s *types.Stat) bool {
-					s.Uid = uint32(os.Getuid())
-					s.Gid = uint32(os.Getgid())
+					if runtime.GOOS != "windows" {
+						// On Windows, Getuid() and Getgid() always return -1
+						// See: https://pkg.go.dev/os#Getgid
+						// See: https://pkg.go.dev/os#Geteuid
+						s.Uid = uint32(os.Getuid())
+						s.Gid = uint32(os.Getgid())
+					}
 					return true
 				},
 			})
@@ -206,8 +212,8 @@ func TestCopySwitchDirToFile(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `file foo
-`)
+	assert.Equal(t, `file foo
+`, b.String())
 }
 
 func TestCopySimple(t *testing.T) {
@@ -253,8 +259,13 @@ func TestCopySimple(t *testing.T) {
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
 			Filter: func(p string, s *types.Stat) bool {
-				s.Uid = uint32(os.Getuid())
-				s.Gid = uint32(os.Getgid())
+				if runtime.GOOS != "windows" {
+					// On Windows, Getuid() and Getgid() always return -1
+					// See: https://pkg.go.dev/os#Getgid
+					// See: https://pkg.go.dev/os#Geteuid
+					s.Uid = uint32(os.Getuid())
+					s.Gid = uint32(os.Getgid())
+				}
 				s.ModTime = tm.UnixNano()
 				return true
 			},
@@ -267,7 +278,18 @@ func TestCopySimple(t *testing.T) {
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `file foo
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, `file foo
+file foo2
+dir zzz
+file zzz\aa
+dir zzz\bb
+dir zzz\bb\cc
+symlink:..\..\ zzz\bb\cc\dd
+file zzz.aa
+`, b.String())
+	} else {
+		assert.Equal(t, `file foo
 file foo2
 dir zzz
 file zzz/aa
@@ -275,7 +297,8 @@ dir zzz/bb
 dir zzz/bb/cc
 symlink:../../ zzz/bb/cc/dd
 file zzz.aa
-`)
+`, b.String())
+	}
 
 	dt, err := os.ReadFile(filepath.Join(dest, "zzz/aa"))
 	assert.NoError(t, err)
@@ -286,24 +309,36 @@ file zzz.aa
 	assert.Equal(t, "dat2", string(dt))
 
 	fi, err := os.Stat(filepath.Join(dest, "foo2"))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, tm, fi.ModTime())
 
-	h, ok := ts.Hash("zzz/aa")
+	h, ok := ts.Hash(filepath.FromSlash("zzz/aa"))
 	assert.True(t, ok)
-	assert.Equal(t, digest.Digest("sha256:99b6ef96ee0572b5b3a4eb28f00b715d820bfd73836e59cc1565e241f4d1bb2f"), h)
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, digest.Digest("sha256:5da6b6a222dca8d9260384da15378d4389f7e16943e812e08c39759b8514b456"), h)
+	} else {
+		assert.Equal(t, digest.Digest("sha256:99b6ef96ee0572b5b3a4eb28f00b715d820bfd73836e59cc1565e241f4d1bb2f"), h)
+	}
 
 	h, ok = ts.Hash("foo2")
 	assert.True(t, ok)
-	assert.Equal(t, digest.Digest("sha256:dd2529f7749ba45ea55de3b2e10086d6494cc45a94e57650c2882a6a14b4ff32"), h)
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, digest.Digest("sha256:cd83620e5308f6ddb9953a82b2c7450832eac78521dbf067d2882318cabc1311"), h)
+	} else {
+		assert.Equal(t, digest.Digest("sha256:dd2529f7749ba45ea55de3b2e10086d6494cc45a94e57650c2882a6a14b4ff32"), h)
+	}
 
-	h, ok = ts.Hash("zzz/bb/cc/dd")
+	h, ok = ts.Hash(filepath.FromSlash("zzz/bb/cc/dd"))
 	assert.True(t, ok)
-	assert.Equal(t, digest.Digest("sha256:eca07e8f2d09bd574ea2496312e6de1685ef15b8e6a49a534ed9e722bcac8adc"), h)
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, digest.Digest("sha256:47dc68d117ae85dc688103d6ba2cee54caabbbcf606e54ca62fda6a3d9deae19"), h)
+	} else {
+		assert.Equal(t, digest.Digest("sha256:eca07e8f2d09bd574ea2496312e6de1685ef15b8e6a49a534ed9e722bcac8adc"), h)
+	}
 
-	k, ok := chs.c["zzz/aa"]
-	assert.Equal(t, ok, true)
-	assert.Equal(t, k, ChangeKindAdd)
+	k, ok := chs.c[filepath.FromSlash("zzz/aa")]
+	assert.Equal(t, true, ok)
+	assert.Equal(t, ChangeKindAdd, k)
 
 	err = os.WriteFile(filepath.Join(d, "zzz/bb/cc/foo"), []byte("data5"), 0600)
 	assert.NoError(t, err)
@@ -325,8 +360,13 @@ file zzz.aa
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
 			Filter: func(_ string, s *types.Stat) bool {
-				s.Uid = uint32(os.Getuid())
-				s.Gid = uint32(os.Getgid())
+				if runtime.GOOS != "windows" {
+					// On Windows, Getuid() and Getgid() always return -1
+					// See: https://pkg.go.dev/os#Getgid
+					// See: https://pkg.go.dev/os#Geteuid
+					s.Uid = uint32(os.Getuid())
+					s.Gid = uint32(os.Getgid())
+				}
 				s.ModTime = tm.UnixNano()
 				return true
 			},
@@ -339,7 +379,18 @@ file zzz.aa
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, string(b.Bytes()), `file foo
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, `file foo
+dir zzz
+file zzz\aa
+dir zzz\bb
+dir zzz\bb\cc
+symlink:..\..\ zzz\bb\cc\dd
+file zzz\bb\cc\foo
+file zzz.aa
+`, b.String())
+	} else {
+		assert.Equal(t, `file foo
 dir zzz
 file zzz/aa
 dir zzz/bb
@@ -347,36 +398,45 @@ dir zzz/bb/cc
 symlink:../../ zzz/bb/cc/dd
 file zzz/bb/cc/foo
 file zzz.aa
-`)
+`, b.String())
+	}
 
 	dt, err = os.ReadFile(filepath.Join(dest, "zzz/bb/cc/foo"))
 	assert.NoError(t, err)
 	assert.Equal(t, "data5", string(dt))
 
-	h, ok = ts.Hash("zzz/bb/cc/dd")
+	h, ok = ts.Hash(filepath.FromSlash("zzz/bb/cc/dd"))
 	assert.True(t, ok)
-	assert.Equal(t, digest.Digest("sha256:eca07e8f2d09bd574ea2496312e6de1685ef15b8e6a49a534ed9e722bcac8adc"), h)
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, digest.Digest("sha256:47dc68d117ae85dc688103d6ba2cee54caabbbcf606e54ca62fda6a3d9deae19"), h)
+	} else {
+		assert.Equal(t, digest.Digest("sha256:eca07e8f2d09bd574ea2496312e6de1685ef15b8e6a49a534ed9e722bcac8adc"), h)
+	}
 
-	h, ok = ts.Hash("zzz/bb/cc/foo")
+	h, ok = ts.Hash(filepath.FromSlash("zzz/bb/cc/foo"))
 	assert.True(t, ok)
-	assert.Equal(t, digest.Digest("sha256:cd14a931fc2e123ded338093f2864b173eecdee578bba6ec24d0724272326c3a"), h)
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, digest.Digest("sha256:9184a7db8d056ee43838613279db9a7ab02272e50d5e20d253393521bb34aa46"), h)
+	} else {
+		assert.Equal(t, digest.Digest("sha256:cd14a931fc2e123ded338093f2864b173eecdee578bba6ec24d0724272326c3a"), h)
+	}
 
 	_, ok = ts.Hash("foo2")
 	assert.False(t, ok)
 
 	k, ok = chs.c["foo2"]
-	assert.Equal(t, ok, true)
-	assert.Equal(t, k, ChangeKindDelete)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, ChangeKindDelete, k)
 
-	k, ok = chs.c["zzz/bb/cc/foo"]
-	assert.Equal(t, ok, true)
-	assert.Equal(t, k, ChangeKindAdd)
+	k, ok = chs.c[filepath.FromSlash("zzz/bb/cc/foo")]
+	assert.Equal(t, true, ok)
+	assert.Equal(t, ChangeKindAdd, k)
 
-	_, ok = chs.c["zzz/aa"]
-	assert.Equal(t, ok, false)
+	_, ok = chs.c[filepath.FromSlash("zzz/aa")]
+	assert.Equal(t, false, ok)
 
 	_, ok = chs.c["zzz.aa"]
-	assert.Equal(t, ok, false)
+	assert.Equal(t, false, ok)
 }
 
 func sockPairProto(ctx context.Context) (Stream, Stream) {
@@ -498,8 +558,15 @@ func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 	// Unlike Linux, on FreeBSD's stat() call returns -1 in st_rdev for regular files
 	ss.Devminor = 0
 	ss.Devmajor = 0
+	if runtime.GOOS == "windows" {
+		// On Windows, Getuid() and Getgid() always return -1
+		// See: https://pkg.go.dev/os#Getgid
+		// See: https://pkg.go.dev/os#Geteuid
+		ss.Uid = 0
+		ss.Gid = 0
+	}
 
-	if os.FileMode(ss.Mode)&os.ModeSymlink != 0 {
+	if os.FileMode(ss.Mode)&os.ModeSymlink != 0 && runtime.GOOS != "windows" {
 		ss.Mode = ss.Mode | 0777
 	}
 
