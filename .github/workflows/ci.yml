@@ -79,11 +79,14 @@ jobs:
         with:
           targets: test
 
-  test-macos:
-    runs-on: macos-latest
+  test-os:
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - macos-latest
+          - windows-latest
         go:
           - "1.19"
           - "1.20"

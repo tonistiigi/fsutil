@@ -4,6 +4,7 @@ import (
 	"context"
 	gofs "io/fs"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/containerd/continuity/fs/fstest"
@@ -32,7 +33,7 @@ func TestWalk(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, paths, []string{"dir", "dir/foo"})
+	require.Equal(t, []string{"dir", filepath.FromSlash("dir/foo")}, paths)
 	require.Len(t, files, 2)
 	require.Equal(t, "dir", files[0].Name())
 	require.Equal(t, "foo", files[1].Name())
@@ -49,7 +50,7 @@ func TestWalk(t *testing.T) {
 	require.Equal(t, len("contents"), int(fis[1].Size()))
 
 	require.Equal(t, "dir", fis[0].(*StatInfo).Path)
-	require.Equal(t, "dir/foo", fis[1].(*StatInfo).Path)
+	require.Equal(t, filepath.FromSlash("dir/foo"), fis[1].(*StatInfo).Path)
 }
 
 func TestWalkDir(t *testing.T) {
@@ -98,7 +99,7 @@ func TestWalkDir(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, paths, []string{"1", "1/dir", "1/dir/foo", "2", "2/dir", "2/dir/bar"})
+	require.Equal(t, []string{"1", filepath.FromSlash("1/dir"), filepath.FromSlash("1/dir/foo"), "2", filepath.FromSlash("2/dir"), filepath.FromSlash("2/dir/bar")}, paths)
 	require.Equal(t, "1", files[0].Name())
 	require.Equal(t, "dir", files[1].Name())
 	require.Equal(t, "foo", files[2].Name())
