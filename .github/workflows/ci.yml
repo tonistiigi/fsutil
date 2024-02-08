@@ -111,8 +111,8 @@ jobs:
       -
         name: Test
         run: |
-          go test -coverprofile=coverage.txt -covermode=atomic ./...
-          go tool cover -func=coverage.txt
+          go test -coverprofile="coverage.txt" -covermode="atomic" ./...
+          go tool cover -func="coverage.txt"
       -
         name: Upload coverage
         if: always()
