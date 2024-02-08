@@ -4,16 +4,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DESTDIR: ./bin
+
 on:
   schedule:
     - cron: '0 8 */6 * *' # every 6 days
   push:
     branches:
       - master
-      - gh_test_ci
   pull_request:
-    branches:
-      - master
 
 jobs:
   validate:
@@ -61,11 +61,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go_version:
+        go:
           - "1.19"
           - "1.20"
+        mode:
+          - "root"
+          - "noroot"
     env:
-      GO_VERSION: ${{ matrix.go_version }}
+      GO_VERSION: ${{ matrix.go }}
     steps:
       -
         name: Checkout
@@ -77,7 +80,13 @@ jobs:
         name: Test
         uses: docker/bake-action@v3
         with:
-          targets: test
+          targets: test-${{ matrix.mode }}
+      -
+        name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ${{ env.DESTDIR }}/coverage
+          flags: unit,${{ matrix.mode }},go-${{ matrix.go }}
 
   test-os:
     runs-on: ${{ matrix.os }}
@@ -102,7 +111,16 @@ jobs:
       -
         name: Test
         run: |
-          go test ./...
+          go test -coverprofile=coverage.txt -covermode=atomic ./...
+          go tool cover -func=coverage.txt
+      -
+        name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.txt
+          env_vars: RUNNER_OS
+          flags: unit,go-${{ matrix.go }}
 
   test-freebsd-amd64:
     runs-on: macos-13
@@ -147,4 +165,12 @@ jobs:
           timeout_minutes: 20
           max_attempts: 5
           command: |
-            vagrant ssh -- "cd /vagrant; go test -buildvcs=false ./..."
+            vagrant ssh -- "cd /vagrant; go test -buildvcs=false -coverprofile=coverage.txt -covermode=atomic ./..."
+            vagrant ssh -c "sudo cat /vagrant/coverage.txt" > coverage.txt
+      -
+        name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.txt
+          flags: unit,freebsd
