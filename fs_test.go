@@ -12,6 +12,56 @@ import (
 	"github.com/tonistiigi/fsutil/types"
 )
 
+func TestGetRoot(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// resolve symlinks in tmpDir to match the behavior of NewFS
+	tmpDir, err := filepath.EvalSymlinks(tmpDir)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name     string
+		setupFS  func() FS
+		wantRoot string
+		wantOk   bool
+	}{
+		{
+			name: "Valid FS",
+			setupFS: func() FS {
+				fsys, err := NewFS(tmpDir)
+				require.NoError(t, err)
+				return fsys
+			},
+			wantRoot: filepath.FromSlash(tmpDir),
+			wantOk:   true,
+		},
+		{
+			name: "Invalid FS",
+			setupFS: func() FS {
+				return nil
+			},
+			wantRoot: "",
+			wantOk:   false,
+		},
+	}
+	for _, tt := range testCases {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			fsys := tt.setupFS()
+			if fsys == nil && tt.wantOk {
+				t.Fatal("FS setup returned nil, but test case expects a valid FS")
+			}
+			gotRoot, gotOk := GetRoot(fsys)
+			if gotOk != tt.wantOk {
+				t.Errorf("GetRoot() gotOk = %v, want %v", gotOk, tt.wantOk)
+			}
+			if gotRoot != tt.wantRoot {
+				t.Errorf("GetRoot() gotRoot = %q, want %q", gotRoot, tt.wantRoot)
+			}
+		})
+	}
+}
+
 func TestWalk(t *testing.T) {
 	tmpDir := t.TempDir()
 

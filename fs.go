@@ -44,6 +44,16 @@ type fs struct {
 	root string
 }
 
+// GetRoot returns root dir for FS implementations created by NewFS.
+// Returns an empty string and false if the FS implementation does not have a
+// root path.
+func GetRoot(fsys FS) (string, bool) {
+	if fsi, ok := fsys.(*fs); ok {
+		return fsi.root, true
+	}
+	return "", false
+}
+
 func (fs *fs) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc) error {
 	seenFiles := make(map[uint64]string)
 	return filepath.WalkDir(filepath.Join(fs.root, target), func(path string, dirEntry gofs.DirEntry, walkErr error) (retErr error) {
