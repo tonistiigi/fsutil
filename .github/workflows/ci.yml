@@ -174,3 +174,46 @@ jobs:
         with:
           file: ./coverage.txt
           flags: unit,freebsd
+
+  bench:
+    runs-on: ubuntu-latest
+    permissions:
+      deployments: write  # deployments permission to deploy GitHub pages website
+      contents: write  # contents permission to update benchmark contents in bench-gh-pages branch
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.20"
+          cache-dependency-path: |
+            go.sum
+            bench/go.sum
+      -
+        name: Test
+        run: |
+          set -ex
+          mkdir ./bin
+          go mod download
+          go test -bench=. . | tee ./bin/temp_bench.txt
+          head -n -2 ./bin/temp_bench.txt > ./bin/bench.txt
+          cd ./bench
+          go mod download
+          BENCH_FILE_SIZE=10000 go test -bench=. . | tee ../bin/temp_bench.txt
+          awk 'NR > 4 {print buf[NR%3]} {buf[NR%3] = $0}' ../bin/temp_bench.txt >> ../bin/bench.txt
+      -
+        name: Result
+        run: |
+          cat ./bin/bench.txt
+      -
+        name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@cc9ac13ce81036c9b67fcfe2cb95ca366684b9ea  # v1.19.3
+        with:
+          tool: go
+          output-file-path: ./bin/bench.txt
+          summary-always: true
+          gh-pages-branch: bench-gh-pages
+          github-token: ${{ secrets.GITHUB_TOKEN }}
