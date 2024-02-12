@@ -21,7 +21,11 @@ func diffCopy(proto bool, src, dest string) error {
 	}
 
 	eg.Go(func() error {
-		return fsutil.Send(ctx, s1, fsutil.NewFS(src, nil), nil)
+		fs, err := fsutil.NewFS(src)
+		if err != nil {
+			return err
+		}
+		return fsutil.Send(ctx, s1, fs, nil)
 	})
 	eg.Go(func() error {
 		return fsutil.Receive(ctx, s2, dest, fsutil.ReceiveOpt{})
