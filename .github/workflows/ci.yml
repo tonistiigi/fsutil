@@ -27,13 +27,13 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       -
         name: Run
-        uses: docker/bake-action@v3
+        uses: docker/bake-action@v4
         with:
           targets: ${{ matrix.target }}
 
@@ -47,13 +47,13 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       -
         name: Run
-        uses: docker/bake-action@v3
+        uses: docker/bake-action@v4
         with:
           targets: ${{ matrix.target }}
 
@@ -72,13 +72,13 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       -
         name: Test
-        uses: docker/bake-action@v3
+        uses: docker/bake-action@v4
         with:
           targets: test-${{ matrix.mode }}
       -
@@ -102,10 +102,10 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
       -
@@ -129,10 +129,10 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       -
         name: Cache Vagrant boxes
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/.vagrant.d/boxes
           key: ${{ runner.os }}-vagrant-${{ hashFiles('hack/Vagrantfile.freebsd13') }}
@@ -160,7 +160,7 @@ jobs:
           vagrant up --no-tty
       -
         name: Test
-        uses: nick-fields/retry@14672906e672a08bd6eeb15720e9ed3ce869cdd4  # v2.9.0
+        uses: nick-fields/retry@7152eba30c6575329ac0576536151aca5a72780e  # v3.0.0
         with:
           timeout_minutes: 20
           max_attempts: 5
