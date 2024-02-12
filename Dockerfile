@@ -1,5 +1,6 @@
-#syntax=docker/dockerfile:1
-ARG GO_VERSION=1.20
+# syntax=docker/dockerfile:1
+
+ARG GO_VERSION=1.21
 
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.1.0 AS xx
 

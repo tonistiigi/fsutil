@@ -1,6 +1,6 @@
 module github.com/tonistiigi/fsutil/bench
 
-go 1.19
+go 1.20
 
 require (
 	github.com/containerd/continuity v0.4.1
