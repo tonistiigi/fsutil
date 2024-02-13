@@ -13,7 +13,8 @@ Vagrant.configure("2") do |config|
   config.vm.provision "init", type: "shell", run: "once" do |sh|
     sh.inline = <<~SHELL
       pkg bootstrap
-      pkg install -y go
+      pkg install -y go121
+      ln -s /usr/local/bin/go121 /usr/local/bin/go
     SHELL
   end
 end
