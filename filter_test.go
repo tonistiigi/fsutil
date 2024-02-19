@@ -332,6 +332,33 @@ file includeDir/a.txt
 	assert.Equal(t, []string{"excludeDir", "includeDir", filepath.FromSlash("includeDir/a.txt")}, walked)
 }
 
+func TestWalkerMapSkipDirWithPattern(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD x dir",
+		"ADD x/a.txt file",
+		"ADD y dir",
+		"ADD y/b.txt file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &FilterOpt{
+		IncludePatterns: []string{"**/*.txt"},
+		Map: func(_ string, s *types.Stat) MapResult {
+			if filepath.Base(s.Path) == "x" {
+				return MapResultSkipDir
+			}
+			return MapResultKeep
+		},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, filepath.FromSlash(`dir y
+file y/b.txt
+`), b.String())
+}
+
 func TestWalkerPermissionDenied(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("os.Chmod not fully supported on Windows")

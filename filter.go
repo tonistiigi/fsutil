@@ -356,8 +356,11 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 				}
 				if fs.mapFn != nil {
 					result := fs.mapFn(parentStat.Path, parentStat)
-					if result == MapResultSkipDir || result == MapResultExclude {
+					if result == MapResultExclude {
 						continue
+					} else if result == MapResultSkipDir {
+						parentDirs[i].skipFn = true
+						return filepath.SkipDir
 					}
 				}
 
