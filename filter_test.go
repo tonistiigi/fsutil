@@ -143,6 +143,30 @@ file bar/foo
 `), b.String())
 }
 
+func TestWalkerIncludeReturnSkipDir(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/x dir",
+		"ADD foo/y dir",
+		"ADD foo/x/a.txt file",
+		"ADD foo/y/b.txt file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	found := []string{}
+
+	err = Walk(context.Background(), d, &FilterOpt{
+		IncludePatterns: []string{"**/*.txt"},
+	}, func(path string, info gofs.FileInfo, err error) error {
+		found = append(found, path)
+		return filepath.SkipDir
+	})
+	assert.NoError(t, err)
+
+	assert.Equal(t, []string{"foo"}, found)
+}
+
 func TestWalkerExclude(t *testing.T) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD bar file",
