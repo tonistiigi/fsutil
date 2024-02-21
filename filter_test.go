@@ -143,6 +143,30 @@ file bar/foo
 `), b.String())
 }
 
+func TestWalkerIncludeReturnSkipDir(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo dir",
+		"ADD foo/x dir",
+		"ADD foo/y dir",
+		"ADD foo/x/a.txt file",
+		"ADD foo/y/b.txt file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	found := []string{}
+
+	err = Walk(context.Background(), d, &FilterOpt{
+		IncludePatterns: []string{"**/*.txt"},
+	}, func(path string, info gofs.FileInfo, err error) error {
+		found = append(found, path)
+		return filepath.SkipDir
+	})
+	assert.NoError(t, err)
+
+	assert.Equal(t, []string{"foo"}, found)
+}
+
 func TestWalkerExclude(t *testing.T) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD bar file",
@@ -306,6 +330,33 @@ func TestWalkerMapSkipDir(t *testing.T) {
 file includeDir/a.txt
 `), b.String())
 	assert.Equal(t, []string{"excludeDir", "includeDir", filepath.FromSlash("includeDir/a.txt")}, walked)
+}
+
+func TestWalkerMapSkipDirWithPattern(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD x dir",
+		"ADD x/a.txt file",
+		"ADD y dir",
+		"ADD y/b.txt file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &FilterOpt{
+		IncludePatterns: []string{"**/*.txt"},
+		Map: func(_ string, s *types.Stat) MapResult {
+			if filepath.Base(s.Path) == "x" {
+				return MapResultSkipDir
+			}
+			return MapResultKeep
+		},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, filepath.FromSlash(`dir y
+file y/b.txt
+`), b.String())
 }
 
 func TestWalkerPermissionDenied(t *testing.T) {

@@ -176,6 +176,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 		includeMatchInfo patternmatcher.MatchInfo
 		excludeMatchInfo patternmatcher.MatchInfo
 		calledFn         bool
+		skipFn           bool
 	}
 
 	// used only for include/exclude handling
@@ -333,6 +334,9 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 				}
 			}
 			for i, parentDir := range parentDirs {
+				if parentDir.skipFn {
+					return filepath.SkipDir
+				}
 				if parentDir.calledFn {
 					continue
 				}
@@ -352,15 +356,21 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 				}
 				if fs.mapFn != nil {
 					result := fs.mapFn(parentStat.Path, parentStat)
-					if result == MapResultSkipDir || result == MapResultExclude {
+					if result == MapResultExclude {
 						continue
+					} else if result == MapResultSkipDir {
+						parentDirs[i].skipFn = true
+						return filepath.SkipDir
 					}
 				}
 
-				if err := fn(parentStat.Path, &DirEntryInfo{Stat: parentStat}, nil); err != nil {
+				parentDirs[i].calledFn = true
+				if err := fn(parentStat.Path, &DirEntryInfo{Stat: parentStat}, nil); err == filepath.SkipDir {
+					parentDirs[i].skipFn = true
+					return filepath.SkipDir
+				} else if err != nil {
 					return err
 				}
-				parentDirs[i].calledFn = true
 			}
 			if err := fn(stat.Path, &DirEntryInfo{Stat: stat}, nil); err != nil {
 				return err
