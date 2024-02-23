@@ -87,6 +87,7 @@ jobs:
         with:
           directory: ${{ env.DESTDIR }}/coverage
           flags: unit,${{ matrix.mode }},go-${{ matrix.go }}
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-os:
     runs-on: ${{ matrix.os }}
@@ -121,6 +122,7 @@ jobs:
           file: ./coverage.txt
           env_vars: RUNNER_OS
           flags: unit,go-${{ matrix.go }}
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-freebsd-amd64:
     runs-on: macos-13
@@ -174,3 +176,4 @@ jobs:
         with:
           file: ./coverage.txt
           flags: unit,freebsd
+          token: ${{ secrets.CODECOV_TOKEN }}
