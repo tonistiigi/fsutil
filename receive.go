@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"os"
+	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -119,6 +121,7 @@ func (w *dynamicWalker) fill(ctx context.Context, pathC chan<- *currentPath) err
 }
 
 func (r *receiver) run(ctx context.Context) error {
+	isWindows := runtime.GOOS == "windows"
 	g, ctx := errgroup.WithContext(ctx)
 
 	dw, err := NewDiskWriter(ctx, r.dest, DiskWriterOpt{
@@ -183,6 +186,11 @@ func (r *receiver) run(ctx context.Context) error {
 						return err
 					}
 					break
+				}
+				if isWindows {
+					p.Stat.Path = strings.ReplaceAll(p.Stat.Path, "/", "\\")
+				} else {
+					p.Stat.Path = strings.ReplaceAll(p.Stat.Path, "\\", "/")
 				}
 				if fileCanRequestData(os.FileMode(p.Stat.Mode)) {
 					r.mu.Lock()
