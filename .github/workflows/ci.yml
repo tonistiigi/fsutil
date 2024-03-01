@@ -92,6 +92,8 @@ jobs:
 
   test-os:
     runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: 1
     strategy:
       fail-fast: false
       matrix:
@@ -113,7 +115,7 @@ jobs:
       -
         name: Test
         run: |
-          go test -coverprofile="coverage.txt" -covermode="atomic" ./...
+          go test -v -race -coverprofile="coverage.txt" -covermode="atomic" ./...
           go tool cover -func="coverage.txt"
       -
         name: Upload coverage
@@ -168,7 +170,7 @@ jobs:
           timeout_minutes: 20
           max_attempts: 5
           command: |
-            vagrant ssh -- "cd /vagrant; go test -buildvcs=false -coverprofile=coverage.txt -covermode=atomic ./..."
+            vagrant ssh -- "cd /vagrant; export CGO_ENABLED=1; go test -v -race -buildvcs=false -coverprofile=coverage.txt -covermode=atomic ./..."
             vagrant ssh -c "sudo cat /vagrant/coverage.txt" > coverage.txt
       -
         name: Upload coverage
