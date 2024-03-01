@@ -250,9 +250,14 @@ func TestCopySimple(t *testing.T) {
 
 	tm := time.Now().Truncate(time.Hour)
 
+	var processCbWasCalled bool
+	progressCb := func(size int, last bool) {
+		processCbWasCalled = true
+	}
+
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, fs, nil)
+		return Send(ctx, s1, fs, progressCb)
 	})
 	eg.Go(func() error {
 		return Receive(ctx, s2, dest, ReceiveOpt{
@@ -273,6 +278,7 @@ func TestCopySimple(t *testing.T) {
 	})
 
 	assert.NoError(t, eg.Wait())
+	assert.True(t, processCbWasCalled)
 
 	b := &bytes.Buffer{}
 	err = Walk(context.Background(), dest, nil, bufWalk(b))
