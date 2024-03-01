@@ -12,22 +12,28 @@ WORKDIR /src
 
 FROM base AS build
 ARG TARGETPLATFORM
-RUN --mount=target=. --mount=target=/go/pkg/mod,type=cache \
+RUN --mount=target=. \
+    --mount=target=/go/pkg/mod,type=cache \
     --mount=target=/root/.cache,type=cache \
     xx-go build ./...
 
-FROM base AS test
-ARG TESTFLAGS
-RUN --mount=target=. --mount=target=/go/pkg/mod,type=cache \
-    --mount=target=/root/.cache,type=cache \
-    CGO_ENABLED=0 xx-go test -v -coverprofile=/tmp/coverage.txt -covermode=atomic ${TESTFLAGS} ./...
+FROM base AS test-base
+RUN apk add --no-cache gcc linux-headers musl-dev
+ENV CGO_ENABLED=1
 
-FROM base AS test-noroot
+FROM test-base AS test
+ARG TESTFLAGS
+RUN --mount=target=. \
+    --mount=target=/go/pkg/mod,type=cache \
+    --mount=target=/root/.cache,type=cache \
+    xx-go test -v -race -coverprofile=/tmp/coverage.txt -covermode=atomic ${TESTFLAGS} ./...
+
+FROM test-base AS test-noroot
 RUN mkdir /go/pkg && chmod 0777 /go/pkg
 USER 1000:1000
 RUN --mount=target=. \
     --mount=target=/tmp/.cache,type=cache \
-    CGO_ENABLED=0 GOCACHE=/tmp/gocache xx-go test -v -coverprofile=/tmp/coverage.txt -covermode=atomic ./...
+    GOCACHE=/tmp/gocache xx-go test -v -race -coverprofile=/tmp/coverage.txt -covermode=atomic ./...
 
 FROM scratch AS test-coverage
 COPY --from=test /tmp/coverage.txt /coverage-root.txt
