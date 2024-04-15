@@ -183,7 +183,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		}
 	default:
 		isRegularFile = true
-		file, err := os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY, fi.Mode()) //todo: windows
+		file, err := os.OpenFile(newPath, os.O_CREATE|os.O_WRONLY, fi.Mode())
 		if err != nil {
 			return errors.Wrapf(err, "failed to create %s", newPath)
 		}
@@ -313,7 +313,7 @@ type lazyFileWriter struct {
 
 func (lfw *lazyFileWriter) Write(dt []byte) (int, error) {
 	if lfw.f == nil {
-		file, err := os.OpenFile(lfw.dest, os.O_WRONLY, 0) //todo: windows
+		file, err := os.OpenFile(lfw.dest, os.O_WRONLY, 0)
 		if os.IsPermission(err) {
 			// retry after chmod
 			fi, er := os.Stat(lfw.dest)
