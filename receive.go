@@ -4,7 +4,9 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
+	"syscall"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
@@ -184,13 +186,23 @@ func (r *receiver) run(ctx context.Context) error {
 					}
 					break
 				}
+
+				// normalize unix wire-specific paths to platform-specific paths
+				path := filepath.FromSlash(p.Stat.Path)
+				if filepath.ToSlash(path) != p.Stat.Path {
+					// e.g. a linux path foo/bar\baz cannot be represented on windows
+					return errors.WithStack(&os.PathError{Path: p.Stat.Path, Err: syscall.EINVAL, Op: "unrepresentable path"})
+				}
+				p.Stat.Path = path
+
 				if fileCanRequestData(os.FileMode(p.Stat.Mode)) {
 					r.mu.Lock()
 					r.files[p.Stat.Path] = i
 					r.mu.Unlock()
 				}
 				i++
-				cp := &currentPath{path: p.Stat.Path, stat: p.Stat}
+
+				cp := &currentPath{path: path, stat: p.Stat}
 				if err := r.orderValidator.HandleChange(ChangeKindAdd, cp.path, &StatInfo{cp.stat}, nil); err != nil {
 					return err
 				}

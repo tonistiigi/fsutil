@@ -98,7 +98,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		}
 	}()
 
-	destPath := filepath.Join(dw.dest, filepath.FromSlash(p))
+	destPath := filepath.Join(dw.dest, p)
 
 	if kind == ChangeKindDelete {
 		if dw.filter != nil {
