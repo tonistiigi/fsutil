@@ -224,6 +224,7 @@ func (r *receiver) run(ctx context.Context) error {
 					return errors.WithStack(&os.PathError{Path: p.Stat.Path, Err: syscall.EINVAL, Op: "unrepresentable path"})
 				}
 				p.Stat.Path = path
+				p.Stat.Linkname = filepath.FromSlash(p.Stat.Linkname)
 
 				if fileCanRequestData(os.FileMode(p.Stat.Mode)) {
 					r.mu.Lock()
