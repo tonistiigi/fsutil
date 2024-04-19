@@ -216,6 +216,72 @@ func TestCopySwitchDirToFile(t *testing.T) {
 `, b.String())
 }
 
+func TestHardlinkFilter(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD bar file data1",
+		"ADD foo file >bar",
+		"ADD foo2 file >bar",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	fs, err := NewFS(d)
+	assert.NoError(t, err)
+	fs, err = NewFilterFS(fs, &FilterOpt{})
+	assert.NoError(t, err)
+	fs, err = NewFilterFS(fs, &FilterOpt{
+		IncludePatterns: []string{"foo*"},
+		Map: func(_ string, s *types.Stat) MapResult {
+			s.Uid = 0
+			s.Gid = 0
+			return MapResultKeep
+		},
+	})
+	assert.NoError(t, err)
+
+	dest := t.TempDir()
+
+	eg, ctx := errgroup.WithContext(context.Background())
+	s1, s2 := sockPairProto(ctx)
+
+	eg.Go(func() error {
+		defer s1.(*fakeConnProto).closeSend()
+		return Send(ctx, s1, fs, nil)
+	})
+	eg.Go(func() error {
+		return Receive(ctx, s2, dest, ReceiveOpt{
+			Filter: func(p string, s *types.Stat) bool {
+				if p == "foo2" {
+					require.Equal(t, "foo", s.Linkname)
+				}
+				if runtime.GOOS != "windows" {
+					// On Windows, Getuid() and Getgid() always return -1
+					// See: https://pkg.go.dev/os#Getgid
+					// See: https://pkg.go.dev/os#Geteuid
+					s.Uid = uint32(os.Getuid())
+					s.Gid = uint32(os.Getgid())
+				}
+				return true
+			},
+		})
+	})
+	assert.NoError(t, eg.Wait())
+
+	dt, err := os.ReadFile(filepath.Join(dest, "foo"))
+	assert.NoError(t, err)
+	assert.Equal(t, "data1", string(dt))
+
+	st1, err := os.Stat(filepath.Join(dest, "foo"))
+	assert.NoError(t, err)
+
+	st2, err := os.Stat(filepath.Join(dest, "foo2"))
+	assert.NoError(t, err)
+
+	assert.True(t, os.SameFile(st1, st2))
+}
+
 func TestCopySimple(t *testing.T) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo file data1",
