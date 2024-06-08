@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
@@ -158,7 +157,7 @@ func (s *sender) walk(ctx context.Context) error {
 		}
 		stat, ok := fi.Sys().(*types.Stat)
 		if !ok {
-			return errors.WithStack(&os.PathError{Path: path, Err: syscall.EBADMSG, Op: "fileinfo without stat info"})
+			return errors.WithStack(&os.PathError{Path: path, Err: EBADMSG, Op: "fileinfo without stat info"})
 		}
 		stat.Path = filepath.ToSlash(stat.Path)
 		stat.Linkname = filepath.ToSlash(stat.Linkname)

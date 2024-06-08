@@ -2,8 +2,9 @@ package fs
 
 import (
 	"os"
-	"syscall"
 	"time"
+
+	"github.com/tonistiigi/fsutil"
 )
 
 // MkdirAll is forked os.MkdirAll
@@ -14,7 +15,7 @@ func MkdirAll(path string, perm os.FileMode, user Chowner, tm *time.Time) ([]str
 		if dir.IsDir() {
 			return nil, nil
 		}
-		return nil, &os.PathError{Op: "mkdir", Path: path, Err: syscall.ENOTDIR}
+		return nil, &os.PathError{Op: "mkdir", Path: path, Err: fsutil.ENOTDIR}
 	}
 
 	// Slow path: make sure parent exists and then call Mkdir for path.
