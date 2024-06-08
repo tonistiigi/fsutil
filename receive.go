@@ -36,7 +36,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
@@ -221,7 +220,7 @@ func (r *receiver) run(ctx context.Context) error {
 				path := filepath.FromSlash(p.Stat.Path)
 				if filepath.ToSlash(path) != p.Stat.Path {
 					// e.g. a linux path foo/bar\baz cannot be represented on windows
-					return errors.WithStack(&os.PathError{Path: p.Stat.Path, Err: syscall.EINVAL, Op: "unrepresentable path"})
+					return errors.WithStack(&os.PathError{Path: p.Stat.Path, Err: EINVAL, Op: "unrepresentable path"})
 				}
 				p.Stat.Path = path
 				p.Stat.Linkname = filepath.FromSlash(p.Stat.Linkname)
