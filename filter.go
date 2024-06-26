@@ -197,7 +197,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 			isDir = dirEntry.IsDir()
 		}
 
-		if fs.includeMatcher != nil || fs.excludeMatcher != nil {
+		if fs.includeMatcher != nil || fs.excludeMatcher != nil || fs.mapFn != nil {
 			for len(parentDirs) != 0 {
 				lastParentDir := parentDirs[len(parentDirs)-1].pathWithSep
 				if strings.HasPrefix(path, lastParentDir) {
@@ -298,7 +298,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 			return walkErr
 		}
 
-		if fs.includeMatcher != nil || fs.excludeMatcher != nil {
+		if fs.includeMatcher != nil || fs.excludeMatcher != nil || fs.mapFn != nil {
 			defer func() {
 				if isDir {
 					parentDirs = append(parentDirs, dir)
@@ -309,8 +309,6 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 		if skip {
 			return nil
 		}
-
-		dir.calledFn = true
 
 		fi, err := dirEntry.Info()
 		if err != nil {
@@ -333,6 +331,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 					return nil
 				}
 			}
+
 			for i, parentDir := range parentDirs {
 				if parentDir.skipFn {
 					return filepath.SkipDir
@@ -354,15 +353,6 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 					return ctx.Err()
 				default:
 				}
-				if fs.mapFn != nil {
-					result := fs.mapFn(parentStat.Path, parentStat)
-					if result == MapResultExclude {
-						continue
-					} else if result == MapResultSkipDir {
-						parentDirs[i].skipFn = true
-						return filepath.SkipDir
-					}
-				}
 
 				parentDirs[i].calledFn = true
 				if err := fn(parentStat.Path, &DirEntryInfo{Stat: parentStat}, nil); err == filepath.SkipDir {
@@ -372,6 +362,8 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 					return err
 				}
 			}
+
+			dir.calledFn = true
 			if err := fn(stat.Path, &DirEntryInfo{Stat: stat}, nil); err != nil {
 				return err
 			}
