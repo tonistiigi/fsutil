@@ -342,6 +342,7 @@ func TestWalkerMapSkipDirWithPattern(t *testing.T) {
 	assert.NoError(t, err)
 	defer os.RemoveAll(d)
 
+	// The include pattern takes precence over the map function.
 	b := &bytes.Buffer{}
 	err = Walk(context.Background(), d, &FilterOpt{
 		IncludePatterns: []string{"**/*.txt"},
@@ -354,8 +355,39 @@ func TestWalkerMapSkipDirWithPattern(t *testing.T) {
 	}, bufWalk(b))
 	assert.NoError(t, err)
 
-	assert.Equal(t, filepath.FromSlash(`dir y
+	assert.Equal(t, filepath.FromSlash(`dir x
+file x/a.txt
+dir y
 file y/b.txt
+`), b.String())
+}
+
+func TestWalkerMapPatternImpliesDir(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD x dir",
+		"ADD x/y dir",
+		"ADD x/y/a.txt file",
+		"ADD x/z dir",
+		"ADD x/z/b.txt file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &FilterOpt{
+		Map: func(_ string, s *types.Stat) MapResult {
+			if s.Path == "x/z/b.txt" {
+				return MapResultKeep
+			}
+
+			return MapResultExclude
+		},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, filepath.FromSlash(`dir x
+dir x/z
+file x/z/b.txt
 `), b.String())
 }
 
