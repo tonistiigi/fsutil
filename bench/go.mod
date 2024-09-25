@@ -26,8 +26,8 @@ require (
 	github.com/opencontainers/runc v1.0.0-rc93 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	go.opencensus.io v0.22.3 // indirect
-	golang.org/x/sys v0.1.0 // indirect
-	google.golang.org/protobuf v1.26.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 )
 
 replace github.com/tonistiigi/fsutil => ../

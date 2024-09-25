@@ -80,7 +80,7 @@ func TestCopyWithSubDir(t *testing.T) {
 
 	eg.Go(func() error {
 		defer s1.(*fakeConnProto).closeSend()
-		subdir, err := SubDirFS([]Dir{{FS: fs, Stat: types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
+		subdir, err := SubDirFS([]Dir{{FS: fs, Stat: &types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
 		if err != nil {
 			return err
 		}
@@ -517,49 +517,6 @@ func sockPairProto(ctx context.Context) (Stream, Stream) {
 	return &fakeConnProto{ctx, c1, c2}, &fakeConnProto{ctx, c2, c1}
 }
 
-//nolint:unused
-type fakeConn struct {
-	ctx      context.Context
-	recvChan chan *types.Packet
-	sendChan chan *types.Packet
-}
-
-//nolint:unused
-func (fc *fakeConn) Context() context.Context {
-	return fc.ctx
-}
-
-//nolint:unused
-func (fc *fakeConn) RecvMsg(m interface{}) error {
-	p, ok := m.(*types.Packet)
-	if !ok {
-		return errors.Errorf("invalid msg: %#v", m)
-	}
-	select {
-	case <-fc.ctx.Done():
-		return fc.ctx.Err()
-	case p2 := <-fc.recvChan:
-		*p = *p2
-		return nil
-	}
-}
-
-//nolint:unused
-func (fc *fakeConn) SendMsg(m interface{}) error {
-	p, ok := m.(*types.Packet)
-	if !ok {
-		return errors.Errorf("invalid msg: %#v", m)
-	}
-	p2 := *p
-	p2.Data = append([]byte{}, p2.Data...)
-	select {
-	case <-fc.ctx.Done():
-		return fc.ctx.Err()
-	case fc.sendChan <- &p2:
-		return nil
-	}
-}
-
 type fakeConnProto struct {
 	ctx      context.Context
 	recvChan chan []byte
@@ -625,7 +582,7 @@ func (c *changes) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err er
 
 func simpleSHA256Hasher(s *types.Stat) (hash.Hash, error) {
 	h := sha256.New()
-	ss := *s
+	ss := s.Clone()
 	ss.ModTime = 0
 	// Unlike Linux, on FreeBSD's stat() call returns -1 in st_rdev for regular files
 	ss.Devminor = 0
