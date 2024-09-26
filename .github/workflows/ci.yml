@@ -23,6 +23,7 @@ jobs:
       matrix:
         target:
           - lint
+          - validate-generated-files
           - validate-gomod
           - validate-shfmt
     steps:
