@@ -19,5 +19,22 @@ func (s *Stat) Unmarshal(dAtA []byte) error {
 }
 
 func (s *Stat) Clone() *Stat {
-	return proto.Clone(s).(*Stat)
+	clone := &Stat{
+		Path:     s.Path,
+		Mode:     s.Mode,
+		Uid:      s.Uid,
+		Gid:      s.Gid,
+		Size:     s.Size,
+		ModTime:  s.ModTime,
+		Linkname: s.Linkname,
+		Devmajor: s.Devmajor,
+		Devminor: s.Devminor,
+	}
+	if s.Xattrs != nil {
+		s.Xattrs = make(map[string][]byte, len(s.Xattrs))
+		for k, v := range s.Xattrs {
+			clone.Xattrs[k] = v
+		}
+	}
+	return clone
 }
