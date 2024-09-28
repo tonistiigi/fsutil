@@ -1,6 +1,6 @@
 module github.com/tonistiigi/fsutil
 
-go 1.20
+go 1.21
 
 require (
 	github.com/Microsoft/go-winio v0.5.2
@@ -9,6 +9,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/stretchr/testify v1.8.4
+	github.com/tonistiigi/dchapes-mode v0.0.0-20241001053921-ca0759fec205
 	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.11.0
 	google.golang.org/protobuf v1.31.0
