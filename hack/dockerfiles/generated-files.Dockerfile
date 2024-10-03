@@ -18,6 +18,18 @@ RUN <<EOT
   rm -f /opt/protoc/readme.md
 EOT
 
+FROM base AS protoc-libs
+WORKDIR /app
+RUN --mount=type=bind,source=go.mod,target=/app/go.mod \
+    --mount=type=bind,source=go.sum,target=/app/go.sum \
+    --mount=type=cache,target=/root/.cache \
+    --mount=type=cache,target=/go/pkg/mod <<EOT
+  set -e
+  mkdir -p /opt/protoc
+  go mod download github.com/planetscale/vtprotobuf
+  cp -r $(go list -m -f='{{.Dir}}' github.com/planetscale/vtprotobuf)/include /opt/protoc
+EOT
+
 FROM base AS tools
 WORKDIR /app
 RUN --mount=type=bind,source=go.mod,target=/app/go.mod \
@@ -25,8 +37,10 @@ RUN --mount=type=bind,source=go.mod,target=/app/go.mod \
     --mount=type=cache,target=/root/.cache \
     --mount=type=cache,target=/go/pkg/mod \
   go install \
+    github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto \
     google.golang.org/protobuf/cmd/protoc-gen-go
 COPY --link --from=protoc /opt/protoc /usr/local
+COPY --link --from=protoc-libs /opt/protoc /usr/local
 
 FROM tools AS generate
 RUN --mount=target=github.com/tonistiigi/fsutil \
@@ -34,7 +48,7 @@ RUN --mount=target=github.com/tonistiigi/fsutil \
     --mount=type=cache,target=/go/pkg/mod <<EOT
   set -e
   mkdir /out
-  find github.com/tonistiigi/fsutil -name '*.proto' | xargs protoc --go_out=/out
+  find github.com/tonistiigi/fsutil -name '*.proto' | xargs protoc --go_out=/out --go-vtproto_out=/out
 EOT
 
 FROM scratch AS update
