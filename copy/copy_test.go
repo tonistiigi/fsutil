@@ -596,6 +596,28 @@ func TestCopyIncludeExclude(t *testing.T) {
 	}
 }
 
+func TestCopyFileWithPathTimestamp(t *testing.T) {
+	timestamp := time.Unix(0, 0)
+	apply := fstest.Apply(
+		fstest.CreateDir("/foo/", 0755),
+		fstest.CreateFile("/foo/bar", []byte{}, 0644),
+	)
+
+	t1 := t.TempDir()
+	t2 := t.TempDir()
+
+	require.NoError(t, apply.Apply(t1))
+	require.NoError(t, Copy(context.TODO(), t1, "/foo/bar", t2, "/test1/test2/test3/bar", WithCopyInfo(CopyInfo{
+		CopyDirContents: true,
+		Utime:           &timestamp,
+	})))
+
+	for _, s := range []string{"/test1/test2/test3/bar", "/test1/test2/test3", "/test1/test2", "/test1"} {
+		stat, _ := os.Stat(filepath.Join(t2, s))
+		require.Equal(t, timestamp, stat.ModTime(), "path: %s", s)
+	}
+}
+
 type changeCollector struct {
 	changes []string
 }
