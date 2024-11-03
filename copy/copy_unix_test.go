@@ -161,3 +161,12 @@ func TestCopyModeTextFormat(t *testing.T) {
 		})
 	}
 }
+
+// requiresRoot skips tests that require root
+func requiresRoot(t *testing.T) {
+	t.Helper()
+	if os.Getuid() != 0 {
+		t.Skip("skipping test that requires root")
+		return
+	}
+}

@@ -18,15 +18,6 @@ import (
 	"github.com/tonistiigi/fsutil"
 )
 
-// requiresRoot skips tests that require root
-func requiresRoot(t *testing.T) {
-	t.Helper()
-	if os.Getuid() != 0 {
-		t.Skip("skipping test that requires root")
-		return
-	}
-}
-
 // TODO: Create copy directory which requires privilege
 //  chown
 //  mknod
