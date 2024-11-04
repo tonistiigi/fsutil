@@ -22,7 +22,7 @@ jobs:
     strategy:
       matrix:
         target:
-          - lint
+          - lint-cross
           - validate-generated-files
           - validate-gomod
           - validate-shfmt
