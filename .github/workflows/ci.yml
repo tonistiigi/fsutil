@@ -128,9 +128,19 @@ jobs:
           flags: unit,go-${{ matrix.go }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  test-freebsd-amd64:
+  test-bsd-amd64:
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - freebsd
+          - openbsd
     steps:
+      -
+        name: Prepare
+        run: |
+          echo "VAGRANT_FILE=hack/Vagrantfile.${{ matrix.os }}" >> $GITHUB_ENV
       -
         name: Checkout
         uses: actions/checkout@v4
@@ -139,9 +149,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.vagrant.d/boxes
-          key: ${{ runner.os }}-vagrant-${{ hashFiles('hack/Vagrantfile.freebsd') }}
+          key: ${{ runner.os }}-vagrant-${{ matrix.os }}-${{ hashFiles(env.VAGRANT_FILE) }}
           restore-keys: |
-            ${{ runner.os }}-vagrant-
+            ${{ runner.os }}-vagrant-${{ matrix.os }}-
       -
         name: Install vagrant
         run: |
@@ -155,7 +165,7 @@ jobs:
       -
         name: Set up vagrant
         run: |
-          ln -sf hack/Vagrantfile.freebsd Vagrantfile
+          ln -sf ${{ env.VAGRANT_FILE }} Vagrantfile
           vagrant up --no-tty
       -
         name: Test
@@ -172,5 +182,5 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.txt
-          flags: unit,freebsd
+          flags: unit,${{ matrix.os }}
           token: ${{ secrets.CODECOV_TOKEN }}
