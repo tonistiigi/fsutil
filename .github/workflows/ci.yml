@@ -86,7 +86,7 @@ jobs:
           targets: test-${{ matrix.mode }}
       -
         name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           directory: ${{ env.DESTDIR }}/coverage
           flags: unit,${{ matrix.mode }},go-${{ matrix.go }}
@@ -121,7 +121,7 @@ jobs:
       -
         name: Upload coverage
         if: always()
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           file: ./coverage.txt
           env_vars: RUNNER_OS
@@ -179,7 +179,7 @@ jobs:
       -
         name: Upload coverage
         if: always()
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           file: ./coverage.txt
           flags: unit,${{ matrix.os }}
