@@ -123,7 +123,7 @@ jobs:
         if: always()
         uses: codecov/codecov-action@v5
         with:
-          file: ./coverage.txt
+          files: ./coverage.txt
           env_vars: RUNNER_OS
           flags: unit,go-${{ matrix.go }}
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -181,6 +181,6 @@ jobs:
         if: always()
         uses: codecov/codecov-action@v5
         with:
-          file: ./coverage.txt
+          files: ./coverage.txt
           flags: unit,${{ matrix.os }}
           token: ${{ secrets.CODECOV_TOKEN }}
