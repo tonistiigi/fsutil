@@ -28,14 +28,11 @@ jobs:
           - validate-shfmt
     steps:
       -
-        name: Checkout
-        uses: actions/checkout@v4
-      -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       -
         name: Run
-        uses: docker/bake-action@v5
+        uses: docker/bake-action@v6
         with:
           targets: ${{ matrix.target }}
 
@@ -48,14 +45,11 @@ jobs:
           - cross
     steps:
       -
-        name: Checkout
-        uses: actions/checkout@v4
-      -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       -
         name: Run
-        uses: docker/bake-action@v5
+        uses: docker/bake-action@v6
         with:
           targets: ${{ matrix.target }}
 
@@ -74,14 +68,11 @@ jobs:
       GO_VERSION: ${{ matrix.go }}
     steps:
       -
-        name: Checkout
-        uses: actions/checkout@v4
-      -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       -
         name: Test
-        uses: docker/bake-action@v5
+        uses: docker/bake-action@v6
         with:
           targets: test-${{ matrix.mode }}
       -
