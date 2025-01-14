@@ -70,3 +70,7 @@ func major(device uint64) uint64 {
 func minor(device uint64) uint64 {
 	return (device & 0xff) | ((device >> 12) & 0xfff00)
 }
+
+func modeBits(fi os.FileInfo) uint32 {
+	return uint32(fi.Mode())
+}
