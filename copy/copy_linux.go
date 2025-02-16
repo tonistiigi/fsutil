@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/pkg/errors"
+	"github.com/tonistiigi/fsutil"
 	"golang.org/x/sys/unix"
 )
 
@@ -105,7 +106,7 @@ func copyFileContent(dst, src *os.File) error {
 		n, err := unix.CopyFileRange(int(src.Fd()), nil, int(dst.Fd()), nil, desired, 0)
 		if err != nil {
 			// matches go/src/internal/poll/copy_file_range_linux.go
-			if (err != unix.ENOSYS && err != unix.EXDEV && err != unix.EPERM && err != syscall.EIO && err != unix.EOPNOTSUPP && err != syscall.EINVAL) || !first {
+			if (err != fsutil.ENOSYS && err != fsutil.EXDEV && err != fsutil.EPERM && err != fsutil.EIO && err != fsutil.EOPNOTSUPP && err != fsutil.EINVAL) || !first {
 				return errors.Wrap(err, "copy file range failed")
 			}
 
