@@ -18,6 +18,8 @@ import (
 	"github.com/tonistiigi/fsutil"
 )
 
+const defaultDirectoryMode = 0755
+
 var bufferPool = &sync.Pool{
 	New: func() interface{} {
 		buffer := make([]byte, 32*1024)
@@ -80,7 +82,11 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		if err != nil {
 			return err
 		}
-		if createdDirs, err := MkdirAll(ensureDstPath, 0755, ci.Chown, ci.Utime); err != nil {
+		perm := defaultDirectoryMode
+		if ci.Mode != nil {
+			perm = *ci.Mode
+		}
+		if createdDirs, err := MkdirAll(ensureDstPath, os.FileMode(perm), ci.Chown, ci.Utime); err != nil {
 			return err
 		} else {
 			defer fixCreatedParentDirs(createdDirs, ci.Utime)
@@ -159,7 +165,11 @@ func (c *copier) prepareTargetDir(srcFollowed, src, destPath string, copyDirCont
 		target = destPath
 	}
 	var createdDirs []string
-	if dirs, err := MkdirAll(target, 0755, c.chown, c.utime); err != nil {
+	mode := defaultDirectoryMode
+	if c.mode != nil {
+		mode = *c.mode
+	}
+	if dirs, err := MkdirAll(target, os.FileMode(mode), c.chown, c.utime); err != nil {
 		return "", nil, err
 	} else {
 		createdDirs = dirs
