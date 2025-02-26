@@ -170,3 +170,10 @@ func requiresRoot(t *testing.T) {
 		return
 	}
 }
+
+func readUidGid(fi os.FileInfo) (uid, gid int, ok bool) {
+	if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return int(stat.Uid), int(stat.Gid), true
+	}
+	return 0, 0, false
+}

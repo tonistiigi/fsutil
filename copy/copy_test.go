@@ -283,6 +283,56 @@ func TestCopyExistingDirDest(t *testing.T) {
 	require.Equal(t, "bar-contents", string(dt))
 }
 
+func TestCopyDirectoryChmodChown(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skip()
+	}
+
+	t1 := t.TempDir()
+	apply := fstest.Apply(
+		fstest.CreateDir("dir", 0755),
+		fstest.CreateFile("dir/foo.txt", []byte("foo-contents"), 0644),
+		fstest.CreateDir("dir/sub2", 0755),
+	)
+	require.NoError(t, apply.Apply(t1))
+
+	t2 := t.TempDir()
+
+	mod := int(0700)
+	err := Copy(context.TODO(), t1, "dir", t2, "dest/sub", WithCopyInfo(CopyInfo{
+		CopyDirContents: true,
+		Mode:            &mod,
+	}), WithChown(100, 200))
+	require.NoError(t, err)
+
+	st, err := os.Lstat(filepath.Join(t2, "dest/sub"))
+	require.NoError(t, err)
+	uid, gid, ok := readUidGid(st)
+	if ok {
+		require.Equal(t, 100, uid)
+		require.Equal(t, 200, gid)
+	}
+	require.Equal(t, os.FileMode(0700), st.Mode()&os.ModePerm)
+
+	st, err = os.Lstat(filepath.Join(t2, "dest/sub/foo.txt"))
+	require.NoError(t, err)
+	uid, gid, ok = readUidGid(st)
+	if ok {
+		require.Equal(t, 100, uid)
+		require.Equal(t, 200, gid)
+	}
+	require.Equal(t, os.FileMode(0700), st.Mode()&os.ModePerm)
+
+	st, err = os.Lstat(filepath.Join(t2, "dest/sub/sub2"))
+	require.NoError(t, err)
+	uid, gid, ok = readUidGid(st)
+	if ok {
+		require.Equal(t, 100, uid)
+		require.Equal(t, 200, gid)
+	}
+	require.Equal(t, os.FileMode(0700), st.Mode()&os.ModePerm)
+}
+
 func TestCopyDirectoryContentsTimestamp(t *testing.T) {
 	timestamp := time.Unix(0, 0)
 	apply := fstest.Apply(
