@@ -10,7 +10,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/planetscale/vtprotobuf v0.6.0
 	github.com/stretchr/testify v1.8.4
-	github.com/tonistiigi/dchapes-mode v0.0.0-20241001053921-ca0759fec205
+	github.com/tonistiigi/dchapes-mode v0.0.0-20250318174251-73d941a28323
 	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.11.0
 	google.golang.org/protobuf v1.31.0
