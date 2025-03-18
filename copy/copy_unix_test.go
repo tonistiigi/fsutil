@@ -124,6 +124,8 @@ func TestCopyModeTextFormat(t *testing.T) {
 		{"remove execute for all", "a-x", 0644, 0644, 0640, 0600},
 		{"remove others and add execute for group", "o-rwx,g+x", 0650, 0750, 0750, 0710},
 		{"capital X (apply execute only if directory)", "a+X", 0644, 0755, 0751, 0711},
+		{"capital u-go X (apply execute only if directory)", "u=rwX,go=rX", 0644, 0755, 0755, 0755},
+		{"capital u-go X (apply execute only if directory)", "u=rX,go=r", 0444, 0544, 0544, 0544},
 		{"remove execute and add write for user", "u-x,u+w", 0644, 0655, 0650, 0600},
 		{"add execute for user and others", "u+x,o+x", 0745, 0755, 0751, 0701},
 		{"add write and read for group and others", "g+rw,o+rw", 0666, 0777, 0776, 0766},
