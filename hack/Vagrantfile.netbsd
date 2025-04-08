@@ -9,13 +9,24 @@ Vagrant.configure("2") do |config|
 
   config.vm.provision "init", type: "shell", run: "once" do |sh|
     sh.inline = <<~SHELL
-      # update CA certs
+      set -ex
+      mkdir -p /var/tmp
+      chmod 1777 /var/tmp
+
       pkgin -y install mozilla-rootcerts
       mozilla-rootcerts install
 
-      ftp https://go.dev/dl/go1.23.2.netbsd-amd64.tar.gz
-      tar -C /tmp -xzf go1.23.2.netbsd-amd64.tar.gz
-      ln -s /tmp/go/bin/go /usr/bin/go
+      ftp https://go.dev/dl/go#{ENV['GO_VERSION']}.netbsd-amd64.tar.gz
+      tar -C /var/tmp -xzf go#{ENV['GO_VERSION']}.netbsd-amd64.tar.gz
+
+      cat << 'EOF' > /usr/bin/go-wrapper
+      #!/bin/sh
+      export TMPDIR="/var/tmp"
+      exec /var/tmp/go/bin/go "$@"
+      EOF
+      chmod +x /usr/bin/go-wrapper
+
+      ln -s /usr/bin/go-wrapper /usr/bin/go
     SHELL
   end
 end

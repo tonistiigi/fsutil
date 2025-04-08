@@ -4,9 +4,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  DESTDIR: ./bin
-
 on:
   workflow_dispatch:
   schedule:
@@ -15,6 +12,10 @@ on:
     branches:
       - master
   pull_request:
+
+env:
+  DESTDIR: ./bin
+  GO_VERSION: "1.23"
 
 jobs:
   validate:
@@ -134,6 +135,10 @@ jobs:
         name: Prepare
         run: |
           echo "VAGRANT_FILE=hack/Vagrantfile.${{ matrix.os }}" >> $GITHUB_ENV
+
+          # Sets semver Go version to be able to download tarball during vagrant setup
+          goVersion=$(curl --silent "https://go.dev/dl/?mode=json&include=all" | jq -r '.[].files[].version' | uniq | sed -e 's/go//' | sort -V | grep $GO_VERSION | tail -1)
+          echo "GO_VERSION=$goVersion" >> $GITHUB_ENV
       -
         name: Checkout
         uses: actions/checkout@v4
