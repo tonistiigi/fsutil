@@ -4,9 +4,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  DESTDIR: ./bin
-
 on:
   workflow_dispatch:
   schedule:
@@ -15,6 +12,10 @@ on:
     branches:
       - master
   pull_request:
+
+env:
+  DESTDIR: ./bin
+  GO_VERSION: "1.23"
 
 jobs:
   validate:
@@ -134,6 +135,10 @@ jobs:
         name: Prepare
         run: |
           echo "VAGRANT_FILE=hack/Vagrantfile.${{ matrix.os }}" >> $GITHUB_ENV
+
+          # Sets semver Go version to be able to download tarball during vagrant setup
+          goVersion=$(curl --silent "https://go.dev/dl/?mode=json&include=all" | jq -r '.[].files[].version' | uniq | sed -e 's/go//' | sort -V | grep $GO_VERSION | tail -1)
+          echo "GO_VERSION=$goVersion" >> $GITHUB_ENV
       -
         name: Checkout
         uses: actions/checkout@v4
@@ -149,8 +154,10 @@ jobs:
         name: Install vagrant
         run: |
           set -x
+          wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
           sudo apt-get update
-          sudo apt-get install -y libvirt-daemon libvirt-daemon-system vagrant vagrant-libvirt ruby-libvirt
+          sudo apt-get install -y libvirt-dev libvirt-daemon libvirt-daemon-system vagrant vagrant-libvirt ruby-libvirt
           sudo systemctl enable --now libvirtd
           sudo chmod a+rw /var/run/libvirt/libvirt-sock
           vagrant plugin install vagrant-libvirt

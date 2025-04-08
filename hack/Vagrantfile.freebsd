@@ -9,9 +9,14 @@ Vagrant.configure("2") do |config|
 
   config.vm.provision "init", type: "shell", run: "once" do |sh|
     sh.inline = <<~SHELL
+      set -ex
+      freebsd-version -kru
+      # switching to "release_2" ensures compatibility with the current Vagrant box
+      sed -i '' 's/latest/release_2/' /usr/local/etc/pkg/repos/FreeBSD.conf
       pkg bootstrap
-      pkg install -y go123
-      ln -s /usr/local/bin/go123 /usr/local/bin/go
+      fetch https://go.dev/dl/go#{ENV['GO_VERSION']}.freebsd-amd64.tar.gz
+      tar -C /usr/local -xzf go#{ENV['GO_VERSION']}.freebsd-amd64.tar.gz
+      ln -s /usr/local/go/bin/go /usr/local/bin/go
     SHELL
   end
 end
