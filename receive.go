@@ -32,6 +32,7 @@ package fsutil
 
 import (
 	"context"
+	"encoding/binary"
 	"io"
 	"os"
 	"path/filepath"
@@ -51,6 +52,8 @@ const (
 	DiffContent
 )
 
+const metadataPath = ".fsutil-metadata"
+
 type ReceiveOpt struct {
 	NotifyHashed  ChangeFunc
 	ContentHasher ContentHasher
@@ -58,6 +61,7 @@ type ReceiveOpt struct {
 	Merge         bool
 	Filter        FilterFunc
 	Differ        DiffType
+	MetadataOnly  FilterFunc
 }
 
 func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) error {
@@ -75,21 +79,23 @@ func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) erro
 		merge:         opt.Merge,
 		filter:        opt.Filter,
 		differ:        opt.Differ,
+		metadataOnly:  opt.MetadataOnly,
 	}
 	return r.run(ctx)
 }
 
 type receiver struct {
-	dest       string
-	conn       Stream
-	files      map[string]uint32
-	pipes      map[uint32]io.WriteCloser
-	mu         sync.RWMutex
-	muPipes    sync.RWMutex
-	progressCb func(int, bool)
-	merge      bool
-	filter     FilterFunc
-	differ     DiffType
+	dest         string
+	conn         Stream
+	files        map[string]uint32
+	pipes        map[uint32]io.WriteCloser
+	mu           sync.RWMutex
+	muPipes      sync.RWMutex
+	progressCb   func(int, bool)
+	merge        bool
+	filter       FilterFunc
+	differ       DiffType
+	metadataOnly FilterFunc
 
 	notifyHashed   ChangeFunc
 	contentHasher  ContentHasher
@@ -164,6 +170,8 @@ func (r *receiver) run(ctx context.Context) error {
 	}
 
 	w := newDynamicWalker()
+	metadataOnly := r.metadataOnly != nil
+	metadataBuffer := &buffer{}
 
 	g.Go(func() (retErr error) {
 		defer func() {
@@ -223,6 +231,22 @@ func (r *receiver) run(ctx context.Context) error {
 					// e.g. a linux path foo/bar\baz cannot be represented on windows
 					return errors.WithStack(&os.PathError{Path: p.Stat.Path, Err: syscall.EINVAL, Op: "unrepresentable path"})
 				}
+				if metadataOnly {
+					if path == metadataPath {
+						continue
+					}
+					n := p.Stat.SizeVT()
+					dt := metadataBuffer.alloc(n + 4)
+					binary.LittleEndian.PutUint32(dt[0:4], uint32(n))
+					_, err := p.Stat.MarshalToSizedBufferVT(dt[4:])
+					if err != nil {
+						return err
+					}
+					if !r.metadataOnly(path, p.Stat) {
+						i++
+						continue
+					}
+				}
 				p.Stat.Path = path
 				p.Stat.Linkname = filepath.FromSlash(p.Stat.Linkname)
 
@@ -272,7 +296,27 @@ func (r *receiver) run(ctx context.Context) error {
 			}
 		}
 	})
-	return g.Wait()
+
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	if !metadataOnly {
+		return nil
+	}
+
+	// although we don't allow tranferring metadataPath, make sure there was no preexisting file/symlink
+	os.Remove(filepath.Join(r.dest, metadataPath))
+
+	f, err := os.OpenFile(filepath.Join(r.dest, metadataPath), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := metadataBuffer.WriteTo(f); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func (r *receiver) asyncDataFunc(ctx context.Context, p string, wc io.WriteCloser) error {
