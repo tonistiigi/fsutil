@@ -170,8 +170,11 @@ func (r *receiver) run(ctx context.Context) error {
 	}
 
 	w := newDynamicWalker()
-	metadataOnly := r.metadataOnly != nil
+	metadataTransfer := r.metadataOnly != nil
+	// buffer Stat metadata in framed proto
 	metadataBuffer := &buffer{}
+	// stack of parent paths that can be replayed if metadata filter matches
+	metadataParents := newStack[*currentPath]()
 
 	g.Go(func() (retErr error) {
 		defer func() {
@@ -231,7 +234,8 @@ func (r *receiver) run(ctx context.Context) error {
 					// e.g. a linux path foo/bar\baz cannot be represented on windows
 					return errors.WithStack(&os.PathError{Path: p.Stat.Path, Err: syscall.EINVAL, Op: "unrepresentable path"})
 				}
-				if metadataOnly {
+				var metaOnly bool
+				if metadataTransfer {
 					if path == metadataPath {
 						continue
 					}
@@ -243,14 +247,13 @@ func (r *receiver) run(ctx context.Context) error {
 						return err
 					}
 					if !r.metadataOnly(path, p.Stat) {
-						i++
-						continue
+						metaOnly = true
 					}
 				}
 				p.Stat.Path = path
 				p.Stat.Linkname = filepath.FromSlash(p.Stat.Linkname)
 
-				if fileCanRequestData(os.FileMode(p.Stat.Mode)) {
+				if !metaOnly && fileCanRequestData(os.FileMode(p.Stat.Mode)) {
 					r.mu.Lock()
 					r.files[p.Stat.Path] = i
 					r.mu.Unlock()
@@ -264,6 +267,31 @@ func (r *receiver) run(ctx context.Context) error {
 				if err := r.hlValidator.HandleChange(ChangeKindAdd, cp.path, &StatInfo{cp.stat}, nil); err != nil {
 					return err
 				}
+				if metadataTransfer {
+					parent := filepath.Dir(cp.path)
+					isDir := os.FileMode(p.Stat.Mode).IsDir()
+					for {
+						last, ok := metadataParents.peek()
+						if !ok || parent == last.path {
+							break
+						}
+						metadataParents.pop()
+					}
+					if isDir {
+						metadataParents.push(cp)
+					}
+					if metaOnly {
+						continue
+					} else {
+						for _, cp := range metadataParents.items {
+							if err := w.update(cp); err != nil {
+								return err
+							}
+						}
+						metadataParents.clear()
+					}
+				}
+
 				if err := w.update(cp); err != nil {
 					return err
 				}
@@ -301,7 +329,7 @@ func (r *receiver) run(ctx context.Context) error {
 		return err
 	}
 
-	if !metadataOnly {
+	if !metadataTransfer {
 		return nil
 	}
 
@@ -370,4 +398,40 @@ func (w *wrappedWriteCloser) Wait(ctx context.Context) error {
 	case <-w.done:
 		return w.err
 	}
+}
+
+type stack[T any] struct {
+	items []T
+}
+
+func newStack[T any]() *stack[T] {
+	return &stack[T]{
+		items: make([]T, 0, 8),
+	}
+}
+
+func (s *stack[T]) push(v T) {
+	s.items = append(s.items, v)
+}
+
+func (s *stack[T]) pop() (T, bool) {
+	if len(s.items) == 0 {
+		var zero T
+		return zero, false
+	}
+	v := s.items[len(s.items)-1]
+	s.items = s.items[:len(s.items)-1]
+	return v, true
+}
+
+func (s *stack[T]) peek() (T, bool) {
+	if len(s.items) == 0 {
+		var zero T
+		return zero, false
+	}
+	return s.items[len(s.items)-1], true
+}
+
+func (s *stack[T]) clear() {
+	s.items = s.items[:0]
 }
