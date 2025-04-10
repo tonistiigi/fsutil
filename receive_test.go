@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"hash"
 	"io"
 	gofs "io/fs"
@@ -509,6 +510,112 @@ file zzz.aa
 
 	_, ok = chs.c["zzz.aa"]
 	assert.Equal(t, false, ok)
+}
+
+func TestCopyMetadataOnly(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD foo file data1",
+		"ADD foo2 file dat2",
+		"ADD zzz dir",
+		"ADD zzz/aa file data3",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+	fs, err := NewFS(d)
+	assert.NoError(t, err)
+	fs, err = NewFilterFS(fs, &FilterOpt{
+		Map: func(_ string, s *types.Stat) MapResult {
+			s.Uid = 0
+			s.Gid = 0
+			return MapResultKeep
+		},
+	})
+	assert.NoError(t, err)
+
+	dest := t.TempDir()
+
+	ts := newNotificationBuffer()
+	chs := &changes{fn: ts.HandleChange}
+
+	eg, ctx := errgroup.WithContext(context.Background())
+	s1, s2 := sockPairProto(ctx)
+
+	tm := time.Now().Truncate(time.Hour)
+
+	var processCbWasCalled bool
+	progressCb := func(size int, last bool) {
+		processCbWasCalled = true
+	}
+
+	eg.Go(func() error {
+		defer s1.(*fakeConnProto).closeSend()
+		return Send(ctx, s1, fs, progressCb)
+	})
+	eg.Go(func() error {
+		return Receive(ctx, s2, dest, ReceiveOpt{
+			NotifyHashed:  chs.HandleChange,
+			ContentHasher: simpleSHA256Hasher,
+			Filter: func(p string, s *types.Stat) bool {
+				if runtime.GOOS != "windows" {
+					// On Windows, Getuid() and Getgid() always return -1
+					// See: https://pkg.go.dev/os#Getgid
+					// See: https://pkg.go.dev/os#Geteuid
+					s.Uid = uint32(os.Getuid())
+					s.Gid = uint32(os.Getgid())
+				}
+				s.ModTime = tm.UnixNano()
+				return true
+			},
+			MetadataOnly: func(p string, s *types.Stat) bool {
+				return p == "foo2"
+			},
+		})
+	})
+
+	assert.NoError(t, eg.Wait())
+	assert.True(t, processCbWasCalled)
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), dest, nil, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, `file .fsutil-metadata
+file foo2
+`, b.String())
+
+	dt, err := os.ReadFile(filepath.Join(dest, "foo2"))
+	assert.NoError(t, err)
+	assert.Equal(t, "dat2", string(dt))
+
+	dt, err = os.ReadFile(filepath.Join(dest, ".fsutil-metadata"))
+	assert.NoError(t, err)
+
+	files := parseFSMetadata(t, dt)
+	assert.Equal(t, 4, len(files))
+
+	assert.Equal(t, "foo", files[0].Path)
+	assert.Equal(t, int64(5), files[0].Size)
+	assert.Equal(t, "foo2", files[1].Path)
+	assert.Equal(t, int64(4), files[1].Size)
+	assert.Equal(t, "zzz", files[2].Path)
+	assert.Equal(t, int64(0), files[2].Size)
+	assert.True(t, (&StatInfo{&files[2]}).IsDir())
+	assert.Equal(t, "zzz/aa", files[3].Path)
+	assert.Equal(t, int64(5), files[3].Size)
+}
+
+func parseFSMetadata(t *testing.T, dt []byte) []types.Stat {
+	var m []types.Stat
+	for len(dt) > 0 {
+		var s types.Stat
+		n := binary.LittleEndian.Uint32(dt[:4])
+		dt = dt[4:]
+		err := s.Unmarshal(dt[:n])
+		assert.NoError(t, err)
+		m = append(m, *s.CloneVT())
+		dt = dt[n:]
+	}
+	return m
 }
 
 func sockPairProto(ctx context.Context) (Stream, Stream) {
