@@ -3,6 +3,8 @@ package fsutil
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -53,4 +55,17 @@ func TestStat(t *testing.T) {
 	assert.NotZero(t, st.ModTime)
 	st.ModTime = 0
 	assert.Equal(t, &types.Stat{Path: "sock", Mode: 0755 /* ModeSocket not set */}, st)
+}
+
+func TestStat_SkipAppleXattrs(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("skipping test that requires darwin")
+	}
+
+	st, err := Stat("Dockerfile")
+	assert.NoError(t, err)
+
+	for key := range st.Xattrs {
+		assert.False(t, strings.HasPrefix(key, "com.apple."))
+	}
 }
