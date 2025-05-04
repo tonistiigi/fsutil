@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/opencontainers/go-digest"
@@ -123,7 +122,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 
 	stat, ok := fi.Sys().(*types.Stat)
 	if !ok {
-		return errors.WithStack(&os.PathError{Path: p, Err: syscall.EBADMSG, Op: "change without stat info"})
+		return errors.WithStack(&os.PathError{Path: p, Err: EBADMSG, Op: "change without stat info"})
 	}
 
 	statCopy := stat.Clone()
@@ -164,7 +163,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 	switch {
 	case fi.IsDir():
 		if err := os.Mkdir(newPath, fi.Mode()); err != nil {
-			if errors.Is(err, syscall.EEXIST) {
+			if errors.Is(err, EEXIST) {
 				// we saw a race to create this directory, so try again
 				return dw.HandleChange(kind, p, fi, nil)
 			}

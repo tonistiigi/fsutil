@@ -18,7 +18,7 @@ const xattrApplePrefix = "com.apple."
 func loadXattr(origpath string, stat *types.Stat) error {
 	xattrs, err := sysx.LListxattr(origpath)
 	if err != nil {
-		if errors.Is(err, syscall.ENOTSUP) {
+		if errors.Is(err, ENOTSUP) {
 			return nil
 		}
 		return errors.Wrapf(err, "failed to xattr %s", origpath)
