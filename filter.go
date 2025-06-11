@@ -40,15 +40,24 @@ type MapFunc func(string, *types.Stat) MapResult
 type MapResult int
 
 const (
-	// Keep the current path and continue.
+	// Keep the current path and continue walking the file tree.
 	MapResultKeep MapResult = iota
 
-	// Exclude the current path and continue.
+	// Exclude the current path and continue walking the file tree.
+	//
+	// If path is a dir, we'll continue walking the subtree of the directory.
+	// If a path in that subtree is later included during the walk, the walker
+	// will backtrack and include the dir.
 	MapResultExclude
 
 	// Exclude the current path, and skip the rest of the dir.
+	//
+	// Skip is used as an important performance optimization to prevent
+	// the walker from visiting large subtrees that it doesn't need to.
+	//
 	// If path is a dir, skip the current directory.
 	// If path is a file, skip the rest of the parent directory.
+	//
 	// (This matches the semantics of fs.SkipDir.)
 	MapResultSkipDir
 )
@@ -197,7 +206,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 			isDir = dirEntry.IsDir()
 		}
 
-		if fs.includeMatcher != nil || fs.excludeMatcher != nil {
+		if fs.includeMatcher != nil || fs.excludeMatcher != nil || fs.mapFn != nil {
 			for len(parentDirs) != 0 {
 				lastParentDir := parentDirs[len(parentDirs)-1].pathWithSep
 				if strings.HasPrefix(path, lastParentDir) {
@@ -298,7 +307,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 			return walkErr
 		}
 
-		if fs.includeMatcher != nil || fs.excludeMatcher != nil {
+		if fs.includeMatcher != nil || fs.excludeMatcher != nil || fs.mapFn != nil {
 			defer func() {
 				if isDir {
 					parentDirs = append(parentDirs, dir)
@@ -309,8 +318,6 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 		if skip {
 			return nil
 		}
-
-		dir.calledFn = true
 
 		fi, err := dirEntry.Info()
 		if err != nil {
@@ -357,7 +364,9 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 				if fs.mapFn != nil {
 					result := fs.mapFn(parentStat.Path, parentStat)
 					if result == MapResultExclude {
-						continue
+						// If a directory is marked excluded, but a subpath is included,
+						// then we should still include the directory.
+						// Otherwise Buildkit will treat this as an error.
 					} else if result == MapResultSkipDir {
 						parentDirs[i].skipFn = true
 						return filepath.SkipDir
@@ -372,6 +381,8 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 					return err
 				}
 			}
+
+			dir.calledFn = true
 			if err := fn(stat.Path, &DirEntryInfo{Stat: stat}, nil); err != nil {
 				return err
 			}

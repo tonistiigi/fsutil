@@ -359,6 +359,66 @@ file y/b.txt
 `), b.String())
 }
 
+// Same as TestWalkerMapSkipDirWithPattern, but
+// with a Map() function that returns Exclude instead of SkipDir.
+func TestWalkerMapExcludeDirWithPattern(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD x dir",
+		"ADD x/a.txt file",
+		"ADD y dir",
+		"ADD y/b.txt file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &FilterOpt{
+		IncludePatterns: []string{"**/*.txt"},
+		Map: func(_ string, s *types.Stat) MapResult {
+			if filepath.Base(s.Path) == "x" {
+				return MapResultExclude
+			}
+			return MapResultKeep
+		},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, filepath.FromSlash(`dir x
+file x/a.txt
+dir y
+file y/b.txt
+`), b.String())
+}
+
+func TestWalkerMapPatternImpliesDir(t *testing.T) {
+	d, err := tmpDir(changeStream([]string{
+		"ADD x dir",
+		"ADD x/y dir",
+		"ADD x/y/a.txt file",
+		"ADD x/z dir",
+		"ADD x/z/b.txt file",
+	}))
+	assert.NoError(t, err)
+	defer os.RemoveAll(d)
+
+	b := &bytes.Buffer{}
+	err = Walk(context.Background(), d, &FilterOpt{
+		Map: func(_ string, s *types.Stat) MapResult {
+			if s.Path == "x/z/b.txt" {
+				return MapResultKeep
+			}
+
+			return MapResultExclude
+		},
+	}, bufWalk(b))
+	assert.NoError(t, err)
+
+	assert.Equal(t, filepath.FromSlash(`dir x
+dir x/z
+file x/z/b.txt
+`), b.String())
+}
+
 func TestWalkerPermissionDenied(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("os.Chmod not fully supported on Windows")
