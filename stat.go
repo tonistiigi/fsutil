@@ -1,6 +1,7 @@
 package fsutil
 
 import (
+	gofs "io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -56,7 +57,11 @@ func mkstat(path, relpath string, fi os.FileInfo, inodemap map[uint64]string) (*
 }
 
 func Stat(path string) (*types.Stat, error) {
-	fi, err := os.Lstat(path)
+	return StatFS(os.DirFS("/"), path)
+}
+
+func StatFS(fsys gofs.FS, path string) (*types.Stat, error) {
+	fi, err := gofs.Lstat(fsys, path)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
