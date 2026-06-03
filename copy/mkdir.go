@@ -2,19 +2,14 @@ package fs
 
 import (
 	"os"
-	"path/filepath"
-	"sync"
 	"syscall"
 	"time"
 )
 
+var UmaskIsZero = false
+
 // MkdirAll is forked os.MkdirAll
 func MkdirAll(path string, perm os.FileMode, user Chowner, tm *time.Time) ([]string, error) {
-	fixUmask := needsUmaskFix(perm)
-	return mkdirAll(path, perm, user, tm, fixUmask)
-}
-
-func mkdirAll(path string, perm os.FileMode, user Chowner, tm *time.Time, fixUmask bool) ([]string, error) {
 	// Fast path: if we can tell whether path is a directory or file, stop with success or error.
 	dir, err := os.Stat(path)
 	if err == nil {
@@ -66,7 +61,7 @@ func mkdirAll(path string, perm os.FileMode, user Chowner, tm *time.Time, fixUma
 	// At the same time, there are certain environments where we rely
 	// on this behavior and the umask causes the directory to be created
 	// with the wrong mode.
-	if fixUmask {
+	if !UmaskIsZero {
 		if err := os.Chmod(path, perm); err != nil {
 			return nil, err
 		}
@@ -82,36 +77,4 @@ func mkdirAll(path string, perm os.FileMode, user Chowner, tm *time.Time, fixUma
 	}
 
 	return createdDirs, nil
-}
-
-var (
-	systemUmask     os.FileMode
-	systemUmaskOnce sync.Once
-)
-
-// needsUmaskFix will check if the requested permission would be affected by the umask.
-func needsUmaskFix(perm os.FileMode) bool {
-	systemUmaskOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "fsutil-umask-probe-")
-		if err != nil {
-			return
-		}
-		defer os.RemoveAll(dir)
-
-		f, err := os.OpenFile(filepath.Join(dir, "probe"), os.O_CREATE|os.O_RDWR, 0777)
-		if err != nil {
-			return
-		}
-		defer f.Close()
-
-		fi, err := f.Stat()
-		if err != nil {
-			return
-		}
-
-		// The bits that were masked out by the system umask are the bits
-		// that were requested (0777) but not present in the resulting mode.
-		systemUmask = 0777 &^ (fi.Mode() & os.ModePerm)
-	})
-	return perm&systemUmask != 0
 }

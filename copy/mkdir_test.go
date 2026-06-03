@@ -5,7 +5,6 @@ package fs
 import (
 	"os"
 	"path/filepath"
-	"sync"
 	"syscall"
 	"testing"
 
@@ -44,9 +43,8 @@ func TestMkdirUmaskFix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 
-			// Invoked both on start and cleanup just out of paranoia.
-			resetSystemUmaskCheck()
-			t.Cleanup(resetSystemUmaskCheck)
+			UmaskIsZero = tt.umask == 0
+			t.Cleanup(func() { UmaskIsZero = false })
 
 			// Set the umask to our tested value and then reset it back.
 			umask := syscall.Umask(int(tt.umask))
@@ -65,11 +63,4 @@ func TestMkdirUmaskFix(t *testing.T) {
 			}
 		})
 	}
-}
-
-// resetSystemUmaskCheck resets the cached system umask so that the next call to
-// needsUmaskFix re-probes the environment.
-func resetSystemUmaskCheck() {
-	systemUmask = 0
-	systemUmaskOnce = sync.Once{}
 }
