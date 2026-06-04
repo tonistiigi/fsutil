@@ -7,6 +7,6 @@ import (
 	"github.com/tonistiigi/fsutil/types"
 )
 
-func handleRootTarTypeBlockCharFifo(root RootMknod, path string, stat *types.Stat) error {
+func handleRootTarTypeBlockCharFifo(RootMknod, string, *types.Stat) error {
 	return errors.New("not implemented")
 }
