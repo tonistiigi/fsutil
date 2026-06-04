@@ -76,7 +76,9 @@ func TestSendError(t *testing.T) {
 		ts := newNotificationBuffer()
 		chs := &changes{fn: ts.HandleChange}
 
-		eg, ctx := errgroup.WithContext(context.Background())
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var eg errgroup.Group
 		s1, s2 := sockPairProto(ctx)
 
 		eg.Go(func() error {
@@ -95,12 +97,13 @@ func TestSendError(t *testing.T) {
 			return err
 		})
 
-		errCh := make(chan error)
+		errCh := make(chan error, 1)
 		go func() {
 			errCh <- eg.Wait()
 		}()
 		select {
 		case <-time.After(15 * time.Second):
+			cancel()
 			t.Fatal("timeout")
 		case err := <-errCh:
 			assert.Contains(t, err.Error(), "foo bar")
