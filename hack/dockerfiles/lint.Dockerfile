@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-ARG GO_VERSION=1.23
-ARG XX_VERSION=1.6.1
+ARG GO_VERSION=1.26
+ARG XX_VERSION=1.9.0
 ARG GOLANGCI_LINT_VERSION=1.61.0
 ARG GOPLS_VERSION=v0.26.0
 # GOPLS_ANALYZERS defines gopls analyzers to be run. disabled by default: deprecated unusedvariable simplifyrange
