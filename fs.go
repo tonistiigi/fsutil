@@ -187,7 +187,7 @@ type StatInfo struct {
 }
 
 func (s *StatInfo) Name() string {
-	return filepath.Base(s.Stat.Path)
+	return filepath.Base(s.Path)
 }
 
 func (s *StatInfo) Size() int64 {
@@ -206,7 +206,7 @@ func (s *StatInfo) IsDir() bool {
 	return s.Mode().IsDir()
 }
 
-func (s *StatInfo) Sys() interface{} {
+func (s *StatInfo) Sys() any {
 	return s.Stat
 }
 
@@ -221,7 +221,7 @@ type DirEntryInfo struct {
 
 func (s *DirEntryInfo) Name() string {
 	if s.Stat != nil {
-		return filepath.Base(s.Stat.Path)
+		return filepath.Base(s.Path)
 	}
 	return s.entry.Name()
 }
@@ -235,7 +235,7 @@ func (s *DirEntryInfo) IsDir() bool {
 
 func (s *DirEntryInfo) Type() gofs.FileMode {
 	if s.Stat != nil {
-		return gofs.FileMode(s.Stat.Mode)
+		return gofs.FileMode(s.Mode)
 	}
 	return s.entry.Type()
 }
@@ -253,6 +253,6 @@ func (s *DirEntryInfo) Info() (gofs.FileInfo, error) {
 		s.Stat = stat
 	}
 
-	st := s.Stat.Clone()
+	st := s.Clone()
 	return &StatInfo{st}, nil
 }

@@ -634,7 +634,7 @@ func (fc *fakeConnProto) Context() context.Context {
 	return fc.ctx
 }
 
-func (fc *fakeConnProto) RecvMsg(m interface{}) error {
+func (fc *fakeConnProto) RecvMsg(m any) error {
 	p, ok := m.(*types.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
@@ -650,7 +650,7 @@ func (fc *fakeConnProto) RecvMsg(m interface{}) error {
 	}
 }
 
-func (fc *fakeConnProto) SendMsg(m interface{}) error {
+func (fc *fakeConnProto) SendMsg(m any) error {
 	p, ok := m.(*types.Packet)
 	if !ok {
 		return errors.Errorf("invalid msg: %#v", m)
