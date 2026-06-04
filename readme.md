@@ -8,71 +8,62 @@ Incremental file directory sync tools in golang.
 ```
 BENCH_FILE_SIZE=10000 docker buildx bake bench-root
 ...
-#15 0.257 + CGO_ENABLED=0 xx-go test -benchmem '-bench=.' '-run=^$' ./...
-#15 0.693 BenchmarkWalker/[1]-target-32                    29266             40683 ns/op            9233 B/op        174 allocs/op
-#15 2.310 BenchmarkWalker/[1]-**/target-32                 29121             40738 ns/op            9281 B/op        175 allocs/op
-#15 3.967 BenchmarkWalker/[2]-*/target-32                   1250            964012 ns/op          200812 B/op       3971 allocs/op
-#15 5.413 BenchmarkWalker/[2]-**/target-32                  1232            991293 ns/op          195884 B/op       3908 allocs/op
-#15 8.137 BenchmarkWalker/[3]-*/*/target-32                   38          28249040 ns/op         5219115 B/op     100914 allocs/op
-#15 11.80 BenchmarkWalker/[3]-**/target-32                    39          26951802 ns/op         5203848 B/op     100827 allocs/op
-#15 15.61 BenchmarkWalker/[4]-*/*/*/target-32                 25          45280808 ns/op         6568953 B/op     119420 allocs/op
-#15 19.60 BenchmarkWalker/[4]-**/target-32                    22          46757187 ns/op         6548530 B/op     119314 allocs/op
-#15 22.66 BenchmarkWalker/[5]-*/*/*/*/target-32               51          21749543 ns/op         2472273 B/op      42817 allocs/op
-#15 24.74 BenchmarkWalker/[5]-**/target-32                    57          21094871 ns/op         2461442 B/op      42699 allocs/op
-#15 28.60 BenchmarkWalker/[6]-*/*/*/*/*/target-32                     28          43522799 ns/op         3996910 B/op      67770 allocs/op
-#15 31.46 BenchmarkWalker/[6]-**/target-32                            32          36312221 ns/op         3979274 B/op      67633 allocs/op
-#15 35.86 BenchmarkWalker/[6]-**-!*/*/**-32                         3040            378412 ns/op           47470 B/op       1006 allocs/op
-#15 38.58 PASS
-#15 38.58 ok    github.com/tonistiigi/fsutil    37.898s
-#15 38.58 ?     github.com/tonistiigi/fsutil/cmd/receive        [no test files]
-#15 38.58 ?     github.com/tonistiigi/fsutil/cmd/send   [no test files]
-#15 38.58 ?     github.com/tonistiigi/fsutil/cmd/walk   [no test files]
-#15 38.59 PASS
-#15 38.59 ok    github.com/tonistiigi/fsutil/copy       0.005s
-#15 38.59 ?     github.com/tonistiigi/fsutil/types      [no test files]
-#15 38.59 ?     github.com/tonistiigi/fsutil/util       [no test files]
-#15 38.61 + cd bench
-#15 38.61 + CGO_ENABLED=0 xx-go test -benchmem '-bench=.' '-run=^$' ./...
-#15 38.97 BenchmarkCopyWithTar10-32                          326           3764572 ns/op          906061 B/op        843 allocs/op
-#15 42.10 BenchmarkCopyWithTar50-32                           55          20591865 ns/op         5015270 B/op       4516 allocs/op
-#15 44.18 BenchmarkCopyWithTar200-32                          16          64855277 ns/op        18768999 B/op      15353 allocs/op
-#15 46.28 BenchmarkCopyWithTar1000-32                          5         215755521 ns/op        72467841 B/op      55045 allocs/op
-#15 49.48 BenchmarkCPA10-32                                  387           3117276 ns/op            7102 B/op         77 allocs/op
-#15 52.84 BenchmarkCPA50-32                                   74          14216530 ns/op            7102 B/op         77 allocs/op
-#15 55.16 BenchmarkCPA200-32                                  28          41337870 ns/op            7103 B/op         77 allocs/op
-#15 57.90 BenchmarkCPA1000-32                                  9         120160486 ns/op            7104 B/op         77 allocs/op
-#15 62.34 BenchmarkDiffCopy10-32                             472           2532670 ns/op          219677 B/op       1124 allocs/op
-#15 65.81 BenchmarkDiffCopy50-32                              93          12163321 ns/op         1258443 B/op       5460 allocs/op
-#15 68.43 BenchmarkDiffCopy200-32                             33          35695300 ns/op         4736101 B/op      18654 allocs/op
-#15 71.35 BenchmarkDiffCopy1000-32                            10         107299221 ns/op        17376938 B/op      67675 allocs/op
-#15 73.89 BenchmarkDiffCopyProto10-32                        450           2548261 ns/op          235518 B/op       1144 allocs/op
-#15 77.28 BenchmarkDiffCopyProto50-32                         94          12235131 ns/op         1308093 B/op       5570 allocs/op
-#15 79.95 BenchmarkDiffCopyProto200-32                        31          35108771 ns/op         4753186 B/op      19001 allocs/op
-#15 82.66 BenchmarkDiffCopyProto1000-32                       10         103423551 ns/op        17448403 B/op      68910 allocs/op
-#15 85.09 BenchmarkIncrementalDiffCopy10-32                 1645            738769 ns/op          119215 B/op       1014 allocs/op
-#15 87.62 BenchmarkIncrementalDiffCopy50-32                  742           1483920 ns/op          440246 B/op       4278 allocs/op
-#15 89.53 BenchmarkIncrementalDiffCopy200-32                 282           4371728 ns/op         1335620 B/op      13606 allocs/op
-#15 91.86 BenchmarkIncrementalDiffCopy1000-32                 82          13720766 ns/op         4543527 B/op      46847 allocs/op
-#15 94.69 BenchmarkIncrementalDiffCopy5000-32                 15          75319643 ns/op        24488733 B/op     266774 allocs/op
-#15 99.61 BenchmarkIncrementalDiffCopy10000-32                 9         132956476 ns/op        43688770 B/op     472977 allocs/op
-#15 103.3 BenchmarkIncrementalCopyWithTar10-32               441           2789884 ns/op          925828 B/op        829 allocs/op
-#15 105.2 BenchmarkIncrementalCopyWithTar50-32                73          16177382 ns/op         5047137 B/op       4463 allocs/op
-#15 106.7 BenchmarkIncrementalCopyWithTar200-32               18          56786225 ns/op        18940856 B/op      15255 allocs/op
-#15 108.4 BenchmarkIncrementalCopyWithTar1000-32               5         223768989 ns/op        73159873 B/op      54913 allocs/op
-#15 111.2 BenchmarkIncrementalRsync10-32                      26          43708755 ns/op            6608 B/op         69 allocs/op
-#15 112.5 BenchmarkIncrementalRsync50-32                      25          45821410 ns/op            6608 B/op         69 allocs/op
-#15 114.0 BenchmarkIncrementalRsync200-32                     22          50456838 ns/op            6608 B/op         69 allocs/op
-#15 115.6 BenchmarkIncrementalRsync1000-32                    18          63784533 ns/op            6600 B/op         69 allocs/op
-#15 118.8 BenchmarkIncrementalRsync5000-32                     8         135204923 ns/op            6608 B/op         69 allocs/op
-#15 124.1 BenchmarkIncrementalRsync10000-32                    6         193377650 ns/op            6600 B/op         69 allocs/op
-#15 127.9 BenchmarkRsync10-32                                 25          46024966 ns/op            6606 B/op         69 allocs/op
-#15 129.3 BenchmarkRsync50-32                                 20          57464062 ns/op            6606 B/op         69 allocs/op
-#15 130.9 BenchmarkRsync200-32                                13          86092507 ns/op            6604 B/op         69 allocs/op
-#15 132.9 BenchmarkRsync1000-32                                6         180127658 ns/op            6606 B/op         69 allocs/op
-#15 134.8 BenchmarkGnuTar10-32                               286           4216965 ns/op           14191 B/op        151 allocs/op
-#15 137.9 BenchmarkGnuTar50-32                                61          18779459 ns/op           14192 B/op        151 allocs/op
-#15 140.1 BenchmarkGnuTar200-32                               20          56019558 ns/op           14192 B/op        151 allocs/op
-#15 142.4 BenchmarkGnuTar1000-32                               6         183059208 ns/op           14189 B/op        151 allocs/op
-#15 144.4 PASS
-#15 144.4 ok    github.com/tonistiigi/fsutil/bench      105.439s
+#17 0.303 + CGO_ENABLED=0 xx-go test -benchmem '-bench=.' '-run=^$' .
+#17 0.303 + tee /tmp/fsutil.log
+#17 1.527 BenchmarkWalker/depth_1_target-32                28356             42258 ns/op            9234 B/op        174 allocs/op
+#17 3.166 BenchmarkWalker/depth_1_doublestar_target-32             28647             42038 ns/op            9282 B/op        175 allocs/op
+#17 4.865 BenchmarkWalker/depth_2_star_target-32                    1184           1009371 ns/op          200654 B/op       3971 allocs/op
+#17 6.342 BenchmarkWalker/depth_2_doublestar_target-32              1148           1007115 ns/op          195891 B/op       3908 allocs/op
+#17 9.339 BenchmarkWalker/depth_3_star_star_target-32                 39          28146516 ns/op         5221363 B/op     100915 allocs/op
+#17 13.54 BenchmarkWalker/depth_3_doublestar_target-32                40          28496829 ns/op         5206464 B/op     100828 allocs/op
+#17 17.99 BenchmarkWalker/depth_4_star_star_star_target-32            26          48224854 ns/op         6571213 B/op     119421 allocs/op
+#17 25.32 BenchmarkWalker/depth_4_doublestar_target-32                24          45061931 ns/op         6488522 B/op     119315 allocs/op
+#17 28.67 BenchmarkWalker/depth_5_star_star_star_star_target-32                       54          22124864 ns/op         2476377 B/op      42818 allocs/op
+#17 32.59 BenchmarkWalker/depth_5_doublestar_target-32                                49          21479412 ns/op         2460690 B/op      42699 allocs/op
+#17 35.09 BenchmarkWalker/depth_6_star_star_star_star_star_target-32                  28          38307776 ns/op         3998884 B/op      67772 allocs/op
+#17 38.05 BenchmarkWalker/depth_6_doublestar_target-32                                31          38242074 ns/op         3980841 B/op      67634 allocs/op
+#17 42.92 BenchmarkWalker/depth_6_doublestar_exclude_star_star_doublestar-32                2925            393602 ns/op           47439 B/op       1006 allocs/op
+#17 45.99 + cd bench
+#17 45.99 + CGO_ENABLED=0 xx-go test -benchmem '-bench=.' '-run=^$' .
+#17 45.99 + tee /tmp/bench.log
+#17 46.84 BenchmarkCopyWithTar10-32                          283           4291776 ns/op          906824 B/op        843 allocs/op
+#17 50.05 BenchmarkCopyWithTar50-32                           50          24077499 ns/op         4999874 B/op       4514 allocs/op
+#17 54.00 BenchmarkCopyWithTar200-32                          15          74350687 ns/op        18757006 B/op      15347 allocs/op
+#17 56.31 BenchmarkCopyWithTar1000-32                          5         259188166 ns/op        72393427 B/op      55045 allocs/op
+#17 61.31 BenchmarkCPA10-32                                  339           3496169 ns/op            7102 B/op         77 allocs/op
+#17 64.68 BenchmarkCPA50-32                                   74          15808000 ns/op            7102 B/op         77 allocs/op
+#17 67.26 BenchmarkCPA200-32                                  26          45892546 ns/op            7101 B/op         77 allocs/op
+#17 70.08 BenchmarkCPA1000-32                                  8         147602854 ns/op            7103 B/op         77 allocs/op
+#17 72.60 BenchmarkDiffCopy10-32                             392           3045072 ns/op          219789 B/op       1123 allocs/op
+#17 76.15 BenchmarkDiffCopy50-32                              82          14024073 ns/op         1253831 B/op       5460 allocs/op
+#17 78.83 BenchmarkDiffCopy200-32                             27          41259003 ns/op         4683591 B/op      18640 allocs/op
+#17 81.60 BenchmarkDiffCopy1000-32                             8         125244042 ns/op        17285147 B/op      67649 allocs/op
+#17 83.90 BenchmarkDiffCopyProto10-32                        412           2934103 ns/op          232184 B/op       1143 allocs/op
+#17 87.46 BenchmarkDiffCopyProto50-32                         80          13809955 ns/op         1273311 B/op       5565 allocs/op
+#17 90.02 BenchmarkDiffCopyProto200-32                        30          41169665 ns/op         4697476 B/op      18995 allocs/op
+#17 93.05 BenchmarkDiffCopyProto1000-32                        8         127126319 ns/op        17334920 B/op      68883 allocs/op
+#17 95.37 BenchmarkIncrementalDiffCopy10-32                 1540            779568 ns/op          119068 B/op       1015 allocs/op
+#17 97.84 BenchmarkIncrementalDiffCopy50-32                  782           1513121 ns/op          455740 B/op       4285 allocs/op
+#17 99.97 BenchmarkIncrementalDiffCopy200-32                 271           4248983 ns/op         1329875 B/op      13603 allocs/op
+#17 102.3 BenchmarkIncrementalDiffCopy1000-32                 84          14027390 ns/op         4552790 B/op      46849 allocs/op
+#17 105.4 BenchmarkIncrementalDiffCopy5000-32                 14          73269136 ns/op        24500669 B/op     266772 allocs/op
+#17 110.6 BenchmarkIncrementalDiffCopy10000-32                 9         128400623 ns/op        43706410 B/op     472982 allocs/op
+#17 114.4 BenchmarkIncrementalCopyWithTar10-32               396           2946217 ns/op          915096 B/op        826 allocs/op
+#17 116.3 BenchmarkIncrementalCopyWithTar50-32                69          16767967 ns/op         5093048 B/op       4472 allocs/op
+#17 117.7 BenchmarkIncrementalCopyWithTar200-32               19          62520307 ns/op        19081658 B/op      15270 allocs/op
+#17 119.7 BenchmarkIncrementalCopyWithTar1000-32               5         239712851 ns/op        73113704 B/op      54938 allocs/op
+#17 122.8 BenchmarkIncrementalRsync10-32                      26          43773727 ns/op            6608 B/op         69 allocs/op
+#17 124.1 BenchmarkIncrementalRsync50-32                      25          45985011 ns/op            6608 B/op         69 allocs/op
+#17 125.6 BenchmarkIncrementalRsync200-32                     22          49976819 ns/op            6608 B/op         69 allocs/op
+#17 127.3 BenchmarkIncrementalRsync1000-32                    19          63618139 ns/op            6600 B/op         69 allocs/op
+#17 130.6 BenchmarkIncrementalRsync5000-32                     8         132002745 ns/op            6608 B/op         69 allocs/op
+#17 136.3 BenchmarkIncrementalRsync10000-32                    6         187247351 ns/op            6608 B/op         69 allocs/op
+#17 140.3 BenchmarkRsync10-32                                 25          46054741 ns/op            6606 B/op         69 allocs/op
+#17 141.6 BenchmarkRsync50-32                                 19          58922835 ns/op            6605 B/op         69 allocs/op
+#17 143.2 BenchmarkRsync200-32                                13          91176938 ns/op            6606 B/op         69 allocs/op
+#17 145.5 BenchmarkRsync1000-32                                6         198319527 ns/op            6606 B/op         69 allocs/op
+#17 147.6 BenchmarkGnuTar10-32                               268           4489528 ns/op           14192 B/op        151 allocs/op
+#17 150.8 BenchmarkGnuTar50-32                                54          20528041 ns/op           14192 B/op        151 allocs/op
+#17 152.9 BenchmarkGnuTar200-32                               19          60394926 ns/op           14192 B/op        151 allocs/op
+#17 155.4 BenchmarkGnuTar1000-32                               6         198630328 ns/op           14192 B/op        151 allocs/op
 ```

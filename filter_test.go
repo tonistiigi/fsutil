@@ -593,9 +593,9 @@ func BenchmarkWalker(b *testing.B) {
 	}} {
 		suffix := ""
 		if scenario.exclude != "" {
-			suffix = fmt.Sprintf("-!%s", scenario.exclude)
+			suffix = "_exclude_" + benchmarkPatternName(scenario.exclude)
 		}
-		b.Run(fmt.Sprintf("[%d]-%s%s", scenario.maxDepth, scenario.pattern, suffix), func(b *testing.B) {
+		b.Run(fmt.Sprintf("depth_%d_%s%s", scenario.maxDepth, benchmarkPatternName(scenario.pattern), suffix), func(b *testing.B) {
 			tmpdir, err := os.MkdirTemp("", "walk")
 			if err != nil {
 				b.Error(err)
@@ -631,7 +631,14 @@ func BenchmarkWalker(b *testing.B) {
 			}
 		})
 	}
+}
 
+func benchmarkPatternName(pattern string) string {
+	return strings.NewReplacer(
+		"**", "doublestar",
+		"*", "star",
+		"/", "_",
+	).Replace(pattern)
 }
 
 func TestWalkerDoublestarInclude(t *testing.T) {

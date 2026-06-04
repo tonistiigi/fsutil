@@ -66,8 +66,8 @@ target "test-noroot" {
 
 target "bench-root" {
   inherits = ["build"]
-  target = "bench"
-  output = ["type=cacheonly"]
+  target = "bench-root-results"
+  output = ["${DESTDIR}/bench"]
   args = {
     BENCH_FILE_SIZE = BENCH_FILE_SIZE
   }
@@ -75,8 +75,8 @@ target "bench-root" {
 
 target "bench-noroot" {
   inherits = ["build"]
-  target = "bench-noroot"
-  output = ["type=cacheonly"]
+  target = "bench-noroot-results"
+  output = ["${DESTDIR}/bench"]
   args = {
     BENCH_FILE_SIZE = BENCH_FILE_SIZE
   }

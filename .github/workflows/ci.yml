@@ -109,6 +109,14 @@ jobs:
         uses: docker/bake-action@v7
         with:
           targets: bench-${{ matrix.mode }}
+      -
+        name: Upload benchmark results
+        uses: codecov/codecov-action@v6
+        with:
+          directory: ${{ env.DESTDIR }}/bench
+          flags: bench,${{ matrix.mode }},go-${{ env.GO_VERSION }},file-size-${{ matrix.file-size || 'default' }}
+          report_type: test_results
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-os:
     runs-on: ${{ matrix.os }}
