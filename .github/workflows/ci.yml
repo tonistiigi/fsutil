@@ -41,6 +41,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         target:
           - build
@@ -58,6 +59,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         go:
           - "1.26"
@@ -88,6 +90,7 @@ jobs:
   bench:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         mode:
           - "root"
