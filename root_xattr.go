@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build linux || darwin || freebsd || netbsd
 
 package fsutil
 
@@ -12,7 +12,7 @@ import (
 var _ RootXattr = (*root)(nil)
 
 func (r *root) LSetxattr(name, key string, value []byte, flags int) error {
-	f, err := r.OpenFile(name, os.O_RDONLY|unix.O_NOFOLLOW, 0)
+	f, err := r.OpenFile(name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return errors.WithStack(err)
 	}
