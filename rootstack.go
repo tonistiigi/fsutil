@@ -68,6 +68,7 @@ func (s *rootStack) pop() error {
 	return item.root.Close()
 }
 
+// rootStackRel returns target relative to base when target is below base.
 func rootStackRel(base, target string) (string, bool) {
 	if base == "." {
 		if target == "." {
