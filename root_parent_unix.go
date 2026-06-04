@@ -81,7 +81,7 @@ func (r *root) rootDirFile() (*os.File, error) {
 		return nil, errors.New("nil root")
 	}
 	r.rootDirOnce.Do(func() {
-		r.rootDir, r.rootDirErr = r.Root.OpenFile(".", os.O_RDONLY|unix.O_DIRECTORY, 0)
+		r.rootDir, r.rootDirErr = r.OpenFile(".", os.O_RDONLY|unix.O_DIRECTORY, 0)
 	})
 	if r.rootDirErr != nil {
 		return nil, r.rootDirErr
