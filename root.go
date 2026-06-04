@@ -44,11 +44,9 @@ type RootLChtimes interface {
 type root struct {
 	*os.Root
 
-	mu          sync.Mutex
-	closed      bool
-	rootDirOnce sync.Once
-	rootDir     *os.File
-	rootDirErr  error
+	mu     sync.Mutex
+	closed bool
+	rootDirState
 }
 
 func NewRoot(osroot *os.Root) Root {
