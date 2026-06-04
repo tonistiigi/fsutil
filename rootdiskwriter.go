@@ -96,7 +96,7 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 	}()
 
 	destPath := cleanRootPath(p)
-	parentRoot, base, err := dw.rootStack.get(destPath)
+	destRoot, base, err := dw.rootStack.get(destPath)
 	if err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 			}
 		}
 		// todo: no need to validate if diff is trusted but is it always?
-		if err := parentRoot.RemoveAll(base); err != nil {
+		if err := destRoot.RemoveAll(base); err != nil {
 			return errors.Wrapf(err, "failed to remove: %s", destPath)
 		}
 		if dw.opt.NotifyCb != nil {
@@ -134,7 +134,7 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 	}
 
 	rename := true
-	oldFi, err := parentRoot.Lstat(base)
+	oldFi, err := destRoot.Lstat(base)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if kind != ChangeKindAdd {
@@ -147,7 +147,7 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 	}
 
 	if oldFi != nil && fi.IsDir() && oldFi.IsDir() {
-		if err := rewriteRootMetadata(parentRoot, base, statCopy); err != nil {
+		if err := rewriteRootMetadata(destRoot, base, statCopy); err != nil {
 			return errors.Wrapf(err, "error setting dir metadata for %s", destPath)
 		}
 		return nil
@@ -162,7 +162,7 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 
 	switch {
 	case fi.IsDir():
-		if err := parentRoot.Mkdir(newPath, fi.Mode().Perm()); err != nil {
+		if err := destRoot.Mkdir(newPath, fi.Mode().Perm()); err != nil {
 			if errors.Is(err, syscall.EEXIST) {
 				// we saw a race to create this directory, so try again
 				return dw.HandleChange(kind, p, fi, nil)
@@ -171,32 +171,24 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 		}
 		dw.dirModTimes[destPath] = statCopy.ModTime
 	case fi.Mode()&os.ModeDevice != 0 || fi.Mode()&os.ModeNamedPipe != 0:
-		if err := handleRootTarTypeBlockCharFifo(parentRoot, newPath, statCopy); err != nil {
+		if err := handleRootTarTypeBlockCharFifo(destRoot, newPath, statCopy); err != nil {
 			return errors.Wrapf(err, "failed to create device %s", newPath)
 		}
 	case fi.Mode()&os.ModeSymlink != 0:
-		if err := parentRoot.Symlink(statCopy.Linkname, newPath); err != nil {
+		if err := destRoot.Symlink(statCopy.Linkname, newPath); err != nil {
 			return errors.Wrapf(err, "failed to symlink %s", newPath)
 		}
 	case statCopy.Linkname != "":
-		linkRoot := parentRoot
-		linkOldName := statCopy.Linkname
-		linkNewName := newPath
-		if rel, ok := rootStackRel(filepath.Dir(destPath), filepath.Clean(statCopy.Linkname)); ok {
-			linkOldName = rel
-		} else {
-			linkRoot = dw.dest
-			linkNewName = destPath
-			if rename {
-				linkNewName = filepath.Join(filepath.Dir(destPath), newPath)
-			}
+		linkNewName := destPath
+		if rename {
+			linkNewName = filepath.Join(filepath.Dir(destPath), newPath)
 		}
-		if err := linkRoot.Link(linkOldName, linkNewName); err != nil {
+		if err := dw.dest.Link(statCopy.Linkname, linkNewName); err != nil {
 			return errors.Wrapf(err, "failed to link %s to %s", newPath, statCopy.Linkname)
 		}
 	default:
 		isRegularFile = true
-		file, err := parentRoot.OpenFile(newPath, os.O_CREATE|os.O_WRONLY, fi.Mode().Perm())
+		file, err := destRoot.OpenFile(newPath, os.O_CREATE|os.O_WRONLY, fi.Mode().Perm())
 		if err != nil {
 			return errors.Wrapf(err, "failed to create %s", newPath)
 		}
@@ -211,18 +203,18 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 		}
 	}
 
-	if err := rewriteRootMetadata(parentRoot, newPath, statCopy); err != nil {
+	if err := rewriteRootMetadata(destRoot, newPath, statCopy); err != nil {
 		return errors.Wrapf(err, "error setting metadata for %s", newPath)
 	}
 
 	if rename {
 		if oldFi.IsDir() != fi.IsDir() {
-			if err := parentRoot.RemoveAll(base); err != nil {
+			if err := destRoot.RemoveAll(base); err != nil {
 				return errors.Wrapf(err, "failed to remove %s", destPath)
 			}
 		}
 
-		if err := parentRoot.Rename(newPath, base); err != nil {
+		if err := destRoot.Rename(newPath, base); err != nil {
 			return errors.Wrapf(err, "failed to rename %s to %s", newPath, destPath)
 		}
 	}
