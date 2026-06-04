@@ -46,7 +46,7 @@ func TestMultipleChunkBoundary(t *testing.T) {
 	buf := &buffer{}
 
 	var written []byte
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		b := buf.alloc(400)
 		require.Len(t, b, 400)
 		for j := range b {
@@ -61,8 +61,8 @@ func TestMultipleChunkBoundary(t *testing.T) {
 	require.Equal(t, int64(40000), n)
 	require.Equal(t, 40000, res.Len())
 	dt := res.Bytes()
-	for i := 0; i < 100; i++ {
-		for j := 0; j < 400; j++ {
+	for i := range 100 {
+		for j := range 400 {
 			require.Equal(t, byte((i+j)%256), dt[i*400+j])
 		}
 	}

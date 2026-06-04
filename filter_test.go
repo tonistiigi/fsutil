@@ -591,7 +591,6 @@ func BenchmarkWalker(b *testing.B) {
 		exclude:  "*/*/**",
 		expected: 20,
 	}} {
-		scenario := scenario // copy loop var
 		suffix := ""
 		if scenario.exclude != "" {
 			suffix = fmt.Sprintf("-!%s", scenario.exclude)
@@ -998,9 +997,9 @@ func TestFilteredOpenInvert(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func trimEqual(t assert.TestingT, expected, actual string, msgAndArgs ...interface{}) bool {
+func trimEqual(t assert.TestingT, expected, actual string, msgAndArgs ...any) bool {
 	lines := []string{}
-	for _, line := range strings.Split(expected, "\n") {
+	for line := range strings.SplitSeq(expected, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			lines = append(lines, line)

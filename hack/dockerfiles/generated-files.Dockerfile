@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.26
 ARG PROTOC_VERSION=3.11.4
 
 FROM golang:${GO_VERSION} AS base
@@ -36,7 +36,7 @@ RUN --mount=type=bind,source=go.mod,target=/app/go.mod \
     --mount=type=bind,source=go.sum,target=/app/go.sum \
     --mount=type=cache,target=/root/.cache \
     --mount=type=cache,target=/go/pkg/mod \
-  go install \
+  go install tool \
     github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto \
     google.golang.org/protobuf/cmd/protoc-gen-go
 COPY --link --from=protoc /opt/protoc /usr/local

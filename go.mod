@@ -1,6 +1,6 @@
 module github.com/tonistiigi/fsutil
 
-go 1.21
+go 1.24.0
 
 require (
 	github.com/Microsoft/go-winio v0.5.2
@@ -24,4 +24,9 @@ require (
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+)
+
+tool (
+	github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto
+	google.golang.org/protobuf/cmd/protoc-gen-go
 )

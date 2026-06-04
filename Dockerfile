@@ -1,11 +1,12 @@
 # syntax=docker/dockerfile:1
 
-ARG GO_VERSION=1.23
-ARG XX_VERSION=1.6.1
+ARG GO_VERSION=1.26
+ARG ALPINE_VERSION=3.23
+ARG XX_VERSION=1.9.0
 
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:${XX_VERSION} AS xx
 
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS base
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS base
 RUN apk add --no-cache git
 COPY --from=xx / /
 WORKDIR /src

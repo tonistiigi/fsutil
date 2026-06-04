@@ -15,7 +15,7 @@ on:
 
 env:
   DESTDIR: ./bin
-  GO_VERSION: "1.23"
+  GO_VERSION: "1.26"
 
 jobs:
   validate:
@@ -60,9 +60,9 @@ jobs:
     strategy:
       matrix:
         go:
-          - "1.23"
-          - "1.22"
-          - "1.21"
+          - "1.26"
+          - "1.25"
+          - "1.24"
         mode:
           - "root"
           - "noroot"
@@ -94,9 +94,9 @@ jobs:
           - macos-latest
           - windows-latest
         go:
-          - "1.23"
-          - "1.22"
-          - "1.21"
+          - "1.26"
+          - "1.25"
+          - "1.24"
     steps:
       -
         name: Checkout

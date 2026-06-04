@@ -10,7 +10,7 @@ import (
 )
 
 var bufPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		buf := make([]byte, 32*1<<10)
 		return &buf
 	},
@@ -26,7 +26,7 @@ type protoStream struct {
 	io.Writer
 }
 
-func (c *protoStream) RecvMsg(m interface{}) error {
+func (c *protoStream) RecvMsg(m any) error {
 	type unmarshaler interface {
 		Unmarshal([]byte) error
 	}
@@ -56,7 +56,7 @@ func (c *protoStream) RecvMsg(m interface{}) error {
 	return nil
 }
 
-func (c *protoStream) SendMsg(m interface{}) error {
+func (c *protoStream) SendMsg(m any) error {
 	type marshalerSizer interface {
 		MarshalTo([]byte) (int, error)
 		Size() int
@@ -68,7 +68,7 @@ func (c *protoStream) SendMsg(m interface{}) error {
 	if _, err := msg.MarshalTo(b[4:]); err != nil {
 		return err
 	}
-	_, err := c.Writer.Write(b)
+	_, err := c.Write(b)
 	return err
 }
 

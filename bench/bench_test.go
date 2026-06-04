@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/containerd/continuity"
-	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/reexec"
+	"github.com/moby/go-archive"
+	"github.com/moby/sys/reexec"
 )
 
 func init() {
