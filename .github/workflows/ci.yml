@@ -85,6 +85,28 @@ jobs:
           flags: unit,${{ matrix.mode }},go-${{ matrix.go }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  bench:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mode:
+          - "root"
+          - "noroot"
+        file-size:
+          - ""
+          - "10000"
+    env:
+      BENCH_FILE_SIZE: ${{ matrix.file-size }}
+    steps:
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      -
+        name: Test
+        uses: docker/bake-action@v7
+        with:
+          targets: bench-${{ matrix.mode }}
+
   test-os:
     runs-on: ${{ matrix.os }}
     strategy:

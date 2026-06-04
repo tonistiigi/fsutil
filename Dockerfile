@@ -36,4 +36,28 @@ COPY --from=test /tmp/coverage.txt /coverage-root.txt
 FROM scratch AS test-noroot-coverage
 COPY --from=test-noroot /tmp/coverage.txt /coverage-noroot.txt
 
+FROM base AS bench-base
+RUN apk add --no-cache rsync
+
+FROM bench-base AS bench
+ARG BENCH_FILE_SIZE
+RUN --mount=target=. \
+    --mount=target=/go/pkg/mod,type=cache \
+    --mount=target=/root/.cache,type=cache <<EOT
+  set -ex
+  CGO_ENABLED=0 xx-go test -benchmem -bench=. -run=^$ ./...
+  cd bench && CGO_ENABLED=0 xx-go test -benchmem -bench=. -run=^$ ./...
+EOT
+
+FROM bench-base AS bench-noroot
+RUN mkdir /go/pkg && chmod 0777 /go/pkg
+USER 1000:1000
+ARG BENCH_FILE_SIZE
+RUN --mount=target=. \
+    --mount=target=/tmp/.cache,type=cache <<EOT
+  set -ex
+  CGO_ENABLED=0 GOCACHE=/tmp/gocache xx-go test -bench=. -benchmem -run=^$ ./...
+  cd bench && CGO_ENABLED=0 GOCACHE=/tmp/gocache xx-go test -bench=. -benchmem -run=^$ ./...
+EOT
+
 FROM build
