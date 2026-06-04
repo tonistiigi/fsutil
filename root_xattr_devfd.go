@@ -1,4 +1,4 @@
-//go:build darwin || freebsd || netbsd
+//go:build freebsd || netbsd
 
 package fsutil
 
