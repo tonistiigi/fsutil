@@ -3,7 +3,10 @@ package fsutil
 import (
 	"context"
 	"hash"
+	gofs "io/fs"
 	"os"
+	"path/filepath"
+	"runtime"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
@@ -44,6 +47,83 @@ func getWalkerFn(root string) walkerFn {
 			}
 		}), "failed to walk")
 	}
+}
+
+func getRootWalkerFn(root Root) walkerFn {
+	return func(ctx context.Context, pathC chan<- *currentPath) error {
+		seenFiles := make(map[uint64]string)
+		return errors.Wrap(gofs.WalkDir(root.FS(), ".", func(path string, d gofs.DirEntry, err error) error {
+			if err != nil {
+				if isNotExist(err) {
+					return filepath.SkipDir
+				}
+				return err
+			}
+			if path == "." {
+				return nil
+			}
+
+			rootPath := filepath.FromSlash(path)
+			fi, err := root.Lstat(rootPath)
+			if err != nil {
+				if isNotExist(err) {
+					return filepath.SkipDir
+				}
+				return errors.WithStack(err)
+			}
+			stat, err := mkrootstat(root, rootPath, fi, seenFiles)
+			if err != nil {
+				return err
+			}
+
+			p := &currentPath{
+				path: rootPath,
+				stat: stat,
+			}
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case pathC <- p:
+				return nil
+			}
+		}), "failed to walk")
+	}
+}
+
+func mkrootstat(root Root, relpath string, fi os.FileInfo, inodemap map[uint64]string) (*types.Stat, error) {
+	stat := &types.Stat{
+		Path:    filepath.FromSlash(filepath.ToSlash(relpath)),
+		Mode:    uint32(fi.Mode()),
+		ModTime: fi.ModTime().UnixNano(),
+	}
+
+	setUnixOpt(fi, stat, relpath, inodemap)
+
+	if !fi.IsDir() {
+		stat.Size = fi.Size()
+		if fi.Mode()&os.ModeSymlink != 0 {
+			link, err := root.Readlink(relpath)
+			if err != nil {
+				return nil, errors.WithStack(err)
+			}
+			stat.Linkname = link
+		}
+	}
+
+	if runtime.GOOS == "windows" {
+		permPart := stat.Mode & uint32(os.ModePerm)
+		noPermPart := stat.Mode &^ uint32(os.ModePerm)
+		// Add the x bit: make everything +x from windows
+		permPart |= 0111
+		permPart &= 0755
+		stat.Mode = noPermPart | permPart
+	}
+
+	// Clear the socket bit since archive/tar.FileInfoHeader does not handle it
+	stat.Mode &^= uint32(os.ModeSocket)
+
+	return stat, nil
 }
 
 func emptyWalker(ctx context.Context, pathC chan<- *currentPath) error {
