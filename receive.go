@@ -205,6 +205,15 @@ func (r *receiver) run(ctx context.Context) error {
 	g.Go(func() (retErr error) {
 		defer func() {
 			if retErr != nil {
+				// If we're unwinding because the errgroup context was
+				// cancelled by another goroutine's failure, report that root
+				// cause instead of the bare "context canceled", which would
+				// otherwise overwrite the real error on the sender side.
+				if errors.Is(retErr, context.Canceled) {
+					if cause := context.Cause(ctx); cause != nil {
+						retErr = cause
+					}
+				}
 				r.conn.SendMsg(&types.Packet{Type: types.PACKET_ERR, Data: []byte(retErr.Error())})
 			}
 		}()
