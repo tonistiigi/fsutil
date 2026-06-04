@@ -41,6 +41,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         target:
           - build
@@ -58,6 +59,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         go:
           - "1.26"
@@ -83,6 +85,37 @@ jobs:
         with:
           directory: ${{ env.DESTDIR }}/coverage
           flags: unit,${{ matrix.mode }},go-${{ matrix.go }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  bench:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - "root"
+          - "noroot"
+        file-size:
+          - ""
+          - "10000"
+    env:
+      BENCH_FILE_SIZE: ${{ matrix.file-size }}
+    steps:
+      -
+        name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      -
+        name: Test
+        uses: docker/bake-action@v7
+        with:
+          targets: bench-${{ matrix.mode }}
+      -
+        name: Upload benchmark results
+        uses: codecov/codecov-action@v6
+        with:
+          directory: ${{ env.DESTDIR }}/bench
+          flags: bench,${{ matrix.mode }},go-${{ env.GO_VERSION }},file-size-${{ matrix.file-size || 'default' }}
+          report_type: test_results
           token: ${{ secrets.CODECOV_TOKEN }}
 
   test-os:

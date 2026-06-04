@@ -19,6 +19,7 @@ require (
 require (
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/jstemmer/go-junit-report/v2 v2.1.0 // indirect
 	github.com/kr/pretty v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
@@ -27,6 +28,7 @@ require (
 )
 
 tool (
+	github.com/jstemmer/go-junit-report/v2
 	github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto
 	google.golang.org/protobuf/cmd/protoc-gen-go
 )
