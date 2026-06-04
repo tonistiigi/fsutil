@@ -2,6 +2,8 @@ package bench
 
 import (
 	"context"
+	"io"
+	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
@@ -9,8 +11,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type closeableStream interface {
+	fsutil.Stream
+	io.Closer
+}
+
 func diffCopy(proto bool, src, dest string) error {
-	var s1, s2 fsutil.Stream
+	var s1, s2 closeableStream
 
 	eg, ctx := errgroup.WithContext(context.Background())
 
@@ -25,9 +32,11 @@ func diffCopy(proto bool, src, dest string) error {
 		if err != nil {
 			panic(err)
 		}
+		defer s1.Close()
 		return fsutil.Send(ctx, s1, fs, nil)
 	})
 	eg.Go(func() error {
+		defer s2.Close()
 		return fsutil.Receive(ctx, s2, dest, fsutil.ReceiveOpt{})
 	})
 
@@ -41,26 +50,34 @@ func diffCopyReg(src, dest string) error {
 	return diffCopy(false, src, dest)
 }
 
-func sockPair(ctx context.Context) (fsutil.Stream, fsutil.Stream) {
+func sockPair(ctx context.Context) (closeableStream, closeableStream) {
 	c1 := make(chan *fstypes.Packet, 64)
 	c2 := make(chan *fstypes.Packet, 64)
-	return &fakeConn{ctx, c1, c2}, &fakeConn{ctx, c2, c1}
+	return &fakeConn{ctx: ctx, recvChan: c1, sendChan: c2}, &fakeConn{ctx: ctx, recvChan: c2, sendChan: c1}
 }
 
-func sockPairProto(ctx context.Context) (fsutil.Stream, fsutil.Stream) {
+func sockPairProto(ctx context.Context) (closeableStream, closeableStream) {
 	c1 := make(chan []byte, 64)
 	c2 := make(chan []byte, 64)
-	return &fakeConnProto{ctx, c1, c2}, &fakeConnProto{ctx, c2, c1}
+	return &fakeConnProto{ctx: ctx, recvChan: c1, sendChan: c2}, &fakeConnProto{ctx: ctx, recvChan: c2, sendChan: c1}
 }
 
 type fakeConn struct {
 	ctx      context.Context
 	recvChan chan *fstypes.Packet
 	sendChan chan *fstypes.Packet
+	close    sync.Once
 }
 
 func (fc *fakeConn) Context() context.Context {
 	return fc.ctx
+}
+
+func (fc *fakeConn) Close() error {
+	fc.close.Do(func() {
+		close(fc.sendChan)
+	})
+	return nil
 }
 
 func (fc *fakeConn) RecvMsg(m interface{}) error {
@@ -71,7 +88,10 @@ func (fc *fakeConn) RecvMsg(m interface{}) error {
 	select {
 	case <-fc.ctx.Done():
 		return fc.ctx.Err()
-	case p2 := <-fc.recvChan:
+	case p2, ok := <-fc.recvChan:
+		if !ok {
+			return io.EOF
+		}
 		*p = *p2
 		return nil
 	}
@@ -96,10 +116,18 @@ type fakeConnProto struct {
 	ctx      context.Context
 	recvChan chan []byte
 	sendChan chan []byte
+	close    sync.Once
 }
 
 func (fc *fakeConnProto) Context() context.Context {
 	return fc.ctx
+}
+
+func (fc *fakeConnProto) Close() error {
+	fc.close.Do(func() {
+		close(fc.sendChan)
+	})
+	return nil
 }
 
 func (fc *fakeConnProto) RecvMsg(m interface{}) error {
@@ -110,7 +138,10 @@ func (fc *fakeConnProto) RecvMsg(m interface{}) error {
 	select {
 	case <-fc.ctx.Done():
 		return fc.ctx.Err()
-	case dt := <-fc.recvChan:
+	case dt, ok := <-fc.recvChan:
+		if !ok {
+			return io.EOF
+		}
 		return p.Unmarshal(dt)
 	}
 }
