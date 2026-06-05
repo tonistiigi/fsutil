@@ -38,27 +38,25 @@ func forEachReceiveDiskWriter(t *testing.T, fn func(*testing.T, receiveTestFunc)
 		},
 	}
 
-	if runtime.GOOS != "windows" {
-		receivers = append(receivers, struct {
-			name    string
-			receive receiveTestFunc
-		}{
-			name: "RootDiskWriter",
-			receive: func(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) error {
-				osroot, err := os.OpenRoot(dest)
-				if err != nil {
-					return errors.WithStack(err)
-				}
-				destRoot := NewRoot(osroot)
+	receivers = append(receivers, struct {
+		name    string
+		receive receiveTestFunc
+	}{
+		name: "RootDiskWriter",
+		receive: func(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) error {
+			osroot, err := os.OpenRoot(dest)
+			if err != nil {
+				return errors.WithStack(err)
+			}
+			destRoot := NewRoot(osroot)
 
-				err = ReceiveRoot(ctx, conn, destRoot, opt)
-				if closeErr := destRoot.Close(); err == nil {
-					err = closeErr
-				}
-				return err
-			},
-		})
-	}
+			err = ReceiveRoot(ctx, conn, destRoot, opt)
+			if closeErr := destRoot.Close(); err == nil {
+				err = closeErr
+			}
+			return err
+		},
+	})
 
 	for _, receiver := range receivers {
 		t.Run(receiver.name, func(t *testing.T) {

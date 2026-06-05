@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -54,30 +53,28 @@ func diskWriterTestFactories() []diskWriterTestFactory {
 		},
 	}
 
-	if runtime.GOOS != "windows" {
-		factories = append(factories, diskWriterTestFactory{
-			name: "RootDiskWriter",
-			new: func(t *testing.T, ctx context.Context, dest string, opt DiskWriterOpt) diskWriterTestWriter {
-				t.Helper()
+	factories = append(factories, diskWriterTestFactory{
+		name: "RootDiskWriter",
+		new: func(t *testing.T, ctx context.Context, dest string, opt DiskWriterOpt) diskWriterTestWriter {
+			t.Helper()
 
-				osroot, err := os.OpenRoot(dest)
-				require.NoError(t, err)
+			osroot, err := os.OpenRoot(dest)
+			require.NoError(t, err)
 
-				destRoot := NewRoot(osroot)
-				t.Cleanup(func() {
-					require.NoError(t, destRoot.Close())
-				})
+			destRoot := NewRoot(osroot)
+			t.Cleanup(func() {
+				require.NoError(t, destRoot.Close())
+			})
 
-				dw, err := NewRootDiskWriter(ctx, destRoot, opt)
-				require.NoError(t, err)
+			dw, err := NewRootDiskWriter(ctx, destRoot, opt)
+			require.NoError(t, err)
 
-				return diskWriterTestWriter{
-					handleChange: dw.HandleChange,
-					wait:         dw.Wait,
-				}
-			},
-		})
-	}
+			return diskWriterTestWriter{
+				handleChange: dw.HandleChange,
+				wait:         dw.Wait,
+			}
+		},
+	})
 
 	return factories
 }
