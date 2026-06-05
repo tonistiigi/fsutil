@@ -72,7 +72,7 @@ func (dw *RootDiskWriter) Wait(ctx context.Context) error {
 			return nil
 		}
 		if mtime, ok := dw.dirModTimes[path]; ok {
-			return rootChtimes(dw.dest, path, mtime)
+			return rootChtimes(dw.dest, filepath.FromSlash(path), mtime)
 		}
 		return nil
 	})
@@ -169,7 +169,7 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 			}
 			return errors.Wrapf(err, "failed to create dir %s", newPath)
 		}
-		dw.dirModTimes[destPath] = statCopy.ModTime
+		dw.dirModTimes[filepath.ToSlash(destPath)] = statCopy.ModTime
 	case fi.Mode()&os.ModeDevice != 0 || fi.Mode()&os.ModeNamedPipe != 0:
 		if err := handleRootTarTypeBlockCharFifo(destRoot, newPath, statCopy); err != nil {
 			return errors.Wrapf(err, "failed to create device %s", newPath)
