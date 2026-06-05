@@ -15,6 +15,8 @@ message Packet {
     PACKET_DATA = 2;
     PACKET_FIN = 3;
     PACKET_ERR = 4;
+    PACKET_HASH_REQ = 5;
+    PACKET_HASH = 6;
   }
   PacketType type = 1;
   Stat stat = 2;
