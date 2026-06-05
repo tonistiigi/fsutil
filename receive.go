@@ -73,19 +73,8 @@ func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) erro
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	r := &receiver{
-		conn:          &syncStream{Stream: conn},
-		dest:          dest,
-		files:         make(map[string]uint32),
-		pipes:         make(map[uint32]io.WriteCloser),
-		notifyHashed:  opt.NotifyHashed,
-		contentHasher: opt.ContentHasher,
-		progressCb:    opt.ProgressCb,
-		merge:         opt.Merge,
-		filter:        opt.Filter,
-		differ:        opt.Differ,
-		metadataOnly:  opt.MetadataOnly,
-	}
+	r := newReceiver(conn, opt)
+	r.dest = dest
 	return r.run(ctx)
 }
 
@@ -93,9 +82,14 @@ func ReceiveRoot(ctx context.Context, conn Stream, dest Root, opt ReceiveOpt) er
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	r := &receiver{
+	r := newReceiver(conn, opt)
+	r.root = dest
+	return r.run(ctx)
+}
+
+func newReceiver(conn Stream, opt ReceiveOpt) *receiver {
+	return &receiver{
 		conn:          &syncStream{Stream: conn},
-		root:          dest,
 		files:         make(map[string]uint32),
 		pipes:         make(map[uint32]io.WriteCloser),
 		notifyHashed:  opt.NotifyHashed,
@@ -106,7 +100,6 @@ func ReceiveRoot(ctx context.Context, conn Stream, dest Root, opt ReceiveOpt) er
 		differ:        opt.Differ,
 		metadataOnly:  opt.MetadataOnly,
 	}
-	return r.run(ctx)
 }
 
 type receiver struct {
