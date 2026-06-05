@@ -152,7 +152,8 @@ func TestCopyDirectoryTimestamps(t *testing.T) {
 	forEachReceiveDiskWriter(t, func(t *testing.T, receive receiveTestFunc) {
 		d, err := tmpDir(changeStream([]string{
 			"ADD foo dir",
-			"ADD foo/bar file data1",
+			"ADD foo/bar dir",
+			"ADD foo/bar/baz file data1",
 		}))
 		assert.NoError(t, err)
 		defer os.RemoveAll(d)
@@ -161,6 +162,7 @@ func TestCopyDirectoryTimestamps(t *testing.T) {
 
 		timestamp := time.Unix(0, 0)
 		require.NoError(t, os.Chtimes(filepath.Join(d, "foo"), timestamp, timestamp))
+		require.NoError(t, os.Chtimes(filepath.Join(d, "foo", "bar"), timestamp, timestamp))
 
 		dest := t.TempDir()
 
@@ -178,11 +180,15 @@ func TestCopyDirectoryTimestamps(t *testing.T) {
 		err = eg.Wait()
 		assert.NoError(t, err)
 
-		dt, err := os.ReadFile(filepath.Join(dest, "foo/bar"))
+		dt, err := os.ReadFile(filepath.Join(dest, "foo", "bar", "baz"))
 		assert.NoError(t, err)
 		assert.Equal(t, "data1", string(dt))
 
 		stat, err := os.Stat(filepath.Join(dest, "foo"))
+		require.NoError(t, err)
+		assert.Equal(t, timestamp, stat.ModTime())
+
+		stat, err = os.Stat(filepath.Join(dest, "foo", "bar"))
 		require.NoError(t, err)
 		assert.Equal(t, timestamp, stat.ModTime())
 	})
