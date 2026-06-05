@@ -83,6 +83,11 @@ func mkrootstat(root Root, relpath string, fi os.FileInfo, inodemap map[uint64]s
 			stat.Linkname = link
 		}
 	}
+	if fi.IsDir() || fi.Mode().IsRegular() {
+		if err := loadRootXattr(root, relpath, stat); err != nil {
+			return nil, err
+		}
+	}
 
 	if runtime.GOOS == "windows" {
 		permPart := stat.Mode & uint32(os.ModePerm)

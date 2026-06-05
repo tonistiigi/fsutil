@@ -57,3 +57,7 @@ func (r *rootWalkerTestRoot) Lstat(name string) (os.FileInfo, error) {
 	}
 	return os.Lstat(filepath.Join(r.dir, name))
 }
+
+func (r *rootWalkerTestRoot) OpenFile(name string, flag int, perm os.FileMode) (*os.File, error) {
+	return os.OpenFile(filepath.Join(r.dir, name), flag, perm)
+}
