@@ -40,6 +40,11 @@ func NewFS(root string) (FS, error) {
 	}, nil
 }
 
+// NewRootFS creates a new FS from a filesystem root.
+func NewRootFS(root Root) FS {
+	return &rootFS{root: root}
+}
+
 type fs struct {
 	root string
 }
@@ -88,6 +93,67 @@ func (fs *fs) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc) erro
 func (fs *fs) Open(p string) (io.ReadCloser, error) {
 	rc, err := os.Open(filepath.Join(fs.root, p))
 	return rc, errors.WithStack(err)
+}
+
+type rootFS struct {
+	root Root
+}
+
+func (fs *rootFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc) error {
+	seenFiles := make(map[uint64]string)
+	target = cleanRootFSTarget(target)
+
+	return gofs.WalkDir(fs.root.FS(), target, func(path string, dirEntry gofs.DirEntry, walkErr error) (retErr error) {
+		defer func() {
+			if retErr != nil && isNotExist(retErr) {
+				retErr = filepath.SkipDir
+			}
+		}()
+
+		path = filepath.FromSlash(path)
+		if path == "." {
+			return nil
+		}
+
+		var entry gofs.DirEntry
+		if dirEntry != nil {
+			fi, err := fs.root.Lstat(path)
+			if err != nil {
+				return errors.WithStack(err)
+			}
+			stat, err := mkrootstat(fs.root, path, fi, seenFiles)
+			if err != nil {
+				return err
+			}
+			entry = &DirEntryInfo{Stat: stat}
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			if err := fn(path, entry, walkErr); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (fs *rootFS) Open(p string) (io.ReadCloser, error) {
+	rc, err := fs.root.OpenFile(cleanRootPath(p), os.O_RDONLY, 0)
+	return rc, errors.WithStack(err)
+}
+
+func cleanRootFSTarget(target string) string {
+	target = cleanRootPath(target)
+	for strings.HasPrefix(target, string(filepath.Separator)) {
+		target = strings.TrimPrefix(target, string(filepath.Separator))
+	}
+	if target == "" || target == "." {
+		return "."
+	}
+	return filepath.ToSlash(target)
 }
 
 type Dir struct {

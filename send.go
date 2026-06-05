@@ -2,9 +2,11 @@ package fsutil
 
 import (
 	"context"
+	"crypto/sha256"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 
@@ -13,9 +15,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const bufferSize = 32 * 1024
+
 var bufPool = sync.Pool{
 	New: func() any {
-		buf := make([]byte, 32*1<<10)
+		buf := make([]byte, bufferSize)
 		return &buf
 	},
 }
@@ -55,6 +59,7 @@ type sender struct {
 
 func (s *sender) run(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
+	hashLimit := make(chan struct{}, hashConcurrency())
 
 	defer s.updateProgress(0, true)
 
@@ -102,6 +107,21 @@ func (s *sender) run(ctx context.Context) error {
 				if err := s.queue(p.ID); err != nil {
 					return err
 				}
+			case types.PACKET_HASH_REQ:
+				path, err := s.lookup(p.ID)
+				if err != nil {
+					return err
+				}
+				h := &sendHandle{p.ID, path}
+				g.Go(func() error {
+					select {
+					case hashLimit <- struct{}{}:
+						defer func() { <-hashLimit }()
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+					return s.sendHash(h)
+				})
 			case types.PACKET_FIN:
 				return s.conn.SendMsg(&types.Packet{Type: types.PACKET_FIN})
 			}
@@ -109,6 +129,14 @@ func (s *sender) run(ctx context.Context) error {
 	})
 
 	return g.Wait()
+}
+
+func hashConcurrency() int {
+	n := runtime.GOMAXPROCS(0)
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 func (s *sender) updateProgress(size int, last bool) {
@@ -131,6 +159,39 @@ func (s *sender) queue(id uint32) error {
 	s.mu.Unlock()
 	s.sendpipeline <- &sendHandle{id, p}
 	return nil
+}
+
+func (s *sender) lookup(id uint32) (string, error) {
+	s.mu.RLock()
+	p, ok := s.files[id]
+	s.mu.RUnlock()
+	if !ok {
+		return "", errors.Errorf("invalid file id %d", id)
+	}
+	return p, nil
+}
+
+func (s *sender) sendHash(hdl *sendHandle) error {
+	f, err := s.fs.Open(hdl.path)
+	if err != nil {
+		return err
+	}
+
+	buf := bufPool.Get().(*[]byte)
+	defer bufPool.Put(buf)
+
+	h := sha256.New()
+	if _, err := io.CopyBuffer(h, f, *buf); err != nil {
+		f.Close()
+		return errors.WithStack(err)
+	}
+	if err := f.Close(); err != nil {
+		return errors.WithStack(err)
+	}
+
+	packet := &types.Packet{ID: hdl.id, Type: types.PACKET_HASH, Data: h.Sum(nil)}
+	s.updateProgress(packet.Size(), false)
+	return s.conn.SendMsg(packet)
 }
 
 func (s *sender) sendFile(h *sendHandle) error {

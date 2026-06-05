@@ -7,6 +7,10 @@
 //   STAT packets that describe each file (an empty stat indicates EOF).
 // - The receiver sends a REQ packet for each file it requires the contents for,
 //   using the ID for the file (determined as its index in the STAT sequence).
+// - If content-based diffing is enabled, the receiver may first send HASH_REQ
+//   packets for files whose metadata matches. The sender replies with HASH
+//   packets containing SHA256 digests, allowing the receiver to avoid REQ for
+//   unchanged files.
 // - The sender sends a DATA packet with byte arrays for the contents of the
 //   file, associated with an ID (an empty array indicates EOF).
 // - Once the receiver has received all files it wants, it sends a FIN packet,
@@ -64,15 +68,35 @@ type ReceiveOpt struct {
 	MetadataOnly  FilterFunc
 }
 
+type receiveDiskWriter interface {
+	HandleChange(ChangeKind, string, os.FileInfo, error) error
+	Wait(context.Context) error
+}
+
 func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	r := &receiver{
+	r := newReceiver(conn, opt)
+	r.dest = dest
+	return r.run(ctx)
+}
+
+func ReceiveRoot(ctx context.Context, conn Stream, dest Root, opt ReceiveOpt) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	r := newReceiver(conn, opt)
+	r.root = dest
+	return r.run(ctx)
+}
+
+func newReceiver(conn Stream, opt ReceiveOpt) *receiver {
+	return &receiver{
 		conn:          &syncStream{Stream: conn},
-		dest:          dest,
 		files:         make(map[string]uint32),
 		pipes:         make(map[uint32]io.WriteCloser),
+		hashWaiters:   make(map[uint32]chan hashResult),
 		notifyHashed:  opt.NotifyHashed,
 		contentHasher: opt.ContentHasher,
 		progressCb:    opt.ProgressCb,
@@ -81,16 +105,18 @@ func Receive(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) erro
 		differ:        opt.Differ,
 		metadataOnly:  opt.MetadataOnly,
 	}
-	return r.run(ctx)
 }
 
 type receiver struct {
 	dest         string
+	root         Root
 	conn         Stream
 	files        map[string]uint32
 	pipes        map[uint32]io.WriteCloser
+	hashWaiters  map[uint32]chan hashResult
 	mu           sync.RWMutex
 	muPipes      sync.RWMutex
+	muHash       sync.Mutex
 	progressCb   func(int, bool)
 	merge        bool
 	filter       FilterFunc
@@ -159,7 +185,7 @@ func (w *dynamicWalker) fill(ctx context.Context, pathC chan<- *currentPath) err
 func (r *receiver) run(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
-	dw, err := NewDiskWriter(ctx, r.dest, DiskWriterOpt{
+	dw, err := r.newDiskWriter(ctx, DiskWriterOpt{
 		AsyncDataCb:   r.asyncDataFunc,
 		NotifyCb:      r.notifyHashed,
 		ContentHasher: r.contentHasher,
@@ -179,12 +205,21 @@ func (r *receiver) run(ctx context.Context) error {
 	g.Go(func() (retErr error) {
 		defer func() {
 			if retErr != nil {
+				// If we're unwinding because the errgroup context was
+				// cancelled by another goroutine's failure, report that root
+				// cause instead of the bare "context canceled", which would
+				// otherwise overwrite the real error on the sender side.
+				if errors.Is(retErr, context.Canceled) {
+					if cause := context.Cause(ctx); cause != nil {
+						retErr = cause
+					}
+				}
 				r.conn.SendMsg(&types.Packet{Type: types.PACKET_ERR, Data: []byte(retErr.Error())})
 			}
 		}()
 		destWalker := emptyWalker
 		if !r.merge {
-			destWalker = getWalkerFn(r.dest)
+			destWalker = r.destWalker()
 		}
 		err := doubleWalkDiff(ctx, dw.HandleChange, destWalker, w.fill, r.filter, r.differ)
 		if err != nil {
@@ -220,6 +255,10 @@ func (r *receiver) run(ctx context.Context) error {
 			switch p.Type {
 			case types.PACKET_ERR:
 				return errors.Errorf("error from sender: %s", p.Data)
+			case types.PACKET_HASH:
+				if err := r.handleHashResponse(p.ID, p.Data); err != nil {
+					return err
+				}
 			case types.PACKET_STAT:
 				if p.Stat == nil {
 					if err := w.update(nil); err != nil {
@@ -253,6 +292,7 @@ func (r *receiver) run(ctx context.Context) error {
 				p.Stat.Path = path
 				p.Stat.Linkname = filepath.FromSlash(p.Stat.Linkname)
 
+				id := i
 				if !metaOnly && fileCanRequestData(os.FileMode(p.Stat.Mode)) {
 					r.mu.Lock()
 					r.files[p.Stat.Path] = i
@@ -261,6 +301,9 @@ func (r *receiver) run(ctx context.Context) error {
 				i++
 
 				cp := &currentPath{path: path, stat: p.Stat}
+				if !metaOnly && r.differ == DiffContent && canContentCheck(p.Stat) {
+					cp.contentHash = r.sourceContentHash(id)
+				}
 				if err := r.orderValidator.HandleChange(ChangeKindAdd, cp.path, &StatInfo{cp.stat}, nil); err != nil {
 					return err
 				}
@@ -333,12 +376,45 @@ func (r *receiver) run(ctx context.Context) error {
 		return nil
 	}
 
+	return r.writeMetadata(metadataBuffer)
+}
+
+func (r *receiver) newDiskWriter(ctx context.Context, opt DiskWriterOpt) (receiveDiskWriter, error) {
+	if r.root != nil {
+		return NewRootDiskWriter(ctx, r.root, opt)
+	}
+	return NewDiskWriter(ctx, r.dest, opt)
+}
+
+func (r *receiver) destWalker() walkerFn {
+	if r.root != nil {
+		return getRootWalkerFn(r.root)
+	}
+	return getWalkerFn(r.dest)
+}
+
+func (r *receiver) writeMetadata(metadataBuffer *buffer) error {
+	if r.root != nil {
+		// although we don't allow tranferring metadataPath, make sure there was no preexisting file/symlink
+		_ = r.root.Remove(metadataPath)
+
+		f, err := r.root.OpenFile(metadataPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		if _, err := metadataBuffer.WriteTo(f); err != nil {
+			f.Close()
+			return err
+		}
+		return f.Close()
+	}
+
 	// although we don't allow tranferring metadataPath, make sure there was no preexisting file/symlink
 	os.Remove(filepath.Join(r.dest, metadataPath))
 
 	f, err := os.OpenFile(filepath.Join(r.dest, metadataPath), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	if _, err := metadataBuffer.WriteTo(f); err != nil {
 		f.Close()
@@ -371,6 +447,57 @@ func (r *receiver) asyncDataFunc(ctx context.Context, p string, wc io.WriteClose
 	r.muPipes.Lock()
 	delete(r.pipes, id)
 	r.muPipes.Unlock()
+	return nil
+}
+
+type hashResult struct {
+	digest []byte
+}
+
+func (r *receiver) sourceContentHash(id uint32) func(context.Context) ([]byte, error) {
+	return func(ctx context.Context) ([]byte, error) {
+		ch := make(chan hashResult, 1)
+
+		r.muHash.Lock()
+		if _, ok := r.hashWaiters[id]; ok {
+			r.muHash.Unlock()
+			return nil, errors.Errorf("duplicate hash request %d", id)
+		}
+		r.hashWaiters[id] = ch
+		r.muHash.Unlock()
+
+		cleanup := func() {
+			r.muHash.Lock()
+			delete(r.hashWaiters, id)
+			r.muHash.Unlock()
+		}
+
+		if err := r.conn.SendMsg(&types.Packet{Type: types.PACKET_HASH_REQ, ID: id}); err != nil {
+			cleanup()
+			return nil, err
+		}
+
+		select {
+		case <-ctx.Done():
+			cleanup()
+			return nil, ctx.Err()
+		case res := <-ch:
+			cleanup()
+			return res.digest, nil
+		}
+	}
+}
+
+func (r *receiver) handleHashResponse(id uint32, digest []byte) error {
+	r.muHash.Lock()
+	ch, ok := r.hashWaiters[id]
+	r.muHash.Unlock()
+	if !ok {
+		return nil
+	}
+
+	digestCopy := append([]byte(nil), digest...)
+	ch <- hashResult{digest: digestCopy}
 	return nil
 }
 
