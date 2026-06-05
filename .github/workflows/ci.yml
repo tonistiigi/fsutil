@@ -141,6 +141,7 @@ jobs:
           go-version: ${{ matrix.go }}
       -
         name: Test
+        shell: bash
         run: |
           go test -coverprofile="coverage.txt" -covermode="atomic" ./...
           go tool cover -func="coverage.txt"

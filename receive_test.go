@@ -218,6 +218,10 @@ func TestCopySwitchDirToFile(t *testing.T) {
 }
 
 func TestHardlinkFilter(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hardlink stat linknames are not populated on windows")
+	}
+
 	d, err := tmpDir(changeStream([]string{
 		"ADD bar file data1",
 		"ADD foo file >bar",
