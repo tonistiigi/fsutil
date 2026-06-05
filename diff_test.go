@@ -9,9 +9,10 @@ import (
 	"testing/fstest"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tonistiigi/fsutil/types"
 )
 
-func TestRootWalkerSkipsConcurrentlyRemovedEntry(t *testing.T) {
+func TestRootFSWalkSkipsConcurrentlyRemovedEntry(t *testing.T) {
 	dest := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(dest, "foo"), 0755))
 
@@ -23,15 +24,20 @@ func TestRootWalkerSkipsConcurrentlyRemovedEntry(t *testing.T) {
 		dir: dest,
 	}
 
-	pathC := make(chan *currentPath, 10)
-	err := getRootWalkerFn(root)(context.Background(), pathC)
-	close(pathC)
+	var paths []string
+	err := NewRootFS(root).Walk(context.Background(), "/", func(path string, entry gofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		fi, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		paths = append(paths, fi.Sys().(*types.Stat).Path)
+		return nil
+	})
 	require.NoError(t, err)
 
-	var paths []string
-	for p := range pathC {
-		paths = append(paths, p.path)
-	}
 	require.Equal(t, []string{"foo"}, paths)
 }
 

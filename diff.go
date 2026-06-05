@@ -14,70 +14,43 @@ import (
 
 type walkerFn func(ctx context.Context, pathC chan<- *currentPath) error
 
-func Changes(ctx context.Context, a, b walkerFn, changeFn ChangeFunc) error {
-	return nil
-}
-
 type HandleChangeFn func(ChangeKind, string, os.FileInfo, error) error
 
 type ContentHasher func(*types.Stat) (hash.Hash, error)
 
 func getWalkerFn(root string) walkerFn {
-	return func(ctx context.Context, pathC chan<- *currentPath) error {
-		return errors.Wrap(Walk(ctx, root, nil, func(path string, f os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-
-			stat, ok := f.Sys().(*types.Stat)
-			if !ok {
-				return errors.Errorf("%T invalid file without stat information", f.Sys())
-			}
-
-			p := &currentPath{
-				path: path,
-				stat: stat,
-			}
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case pathC <- p:
-				return nil
-			}
-		}), "failed to walk")
-	}
+	return getFSWalkerFn(func() (FS, error) {
+		return NewFS(root)
+	})
 }
 
 func getRootWalkerFn(root Root) walkerFn {
+	return getFSWalkerFn(func() (FS, error) {
+		return NewRootFS(root), nil
+	})
+}
+
+func getFSWalkerFn(newFS func() (FS, error)) walkerFn {
 	return func(ctx context.Context, pathC chan<- *currentPath) error {
-		seenFiles := make(map[uint64]string)
-		return errors.Wrap(gofs.WalkDir(root.FS(), ".", func(path string, d gofs.DirEntry, err error) error {
-			if err != nil {
-				if isNotExist(err) {
-					return filepath.SkipDir
-				}
-				return err
-			}
-			if path == "." {
-				return nil
-			}
-
-			rootPath := filepath.FromSlash(path)
-			fi, err := root.Lstat(rootPath)
-			if err != nil {
-				if isNotExist(err) {
-					return filepath.SkipDir
-				}
-				return errors.WithStack(err)
-			}
-			stat, err := mkrootstat(root, rootPath, fi, seenFiles)
+		fs, err := newFS()
+		if err != nil {
+			return errors.Wrap(err, "failed to walk")
+		}
+		return errors.Wrap(fs.Walk(ctx, "/", func(path string, entry gofs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
 
+			fi, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			stat, ok := fi.Sys().(*types.Stat)
+			if !ok {
+				return errors.Errorf("%T invalid file without stat information", fi.Sys())
+			}
 			p := &currentPath{
-				path: rootPath,
+				path: path,
 				stat: stat,
 			}
 
