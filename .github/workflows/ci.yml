@@ -81,7 +81,7 @@ jobs:
           targets: test-${{ matrix.mode }}
       -
         name: Upload coverage
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           directory: ${{ env.DESTDIR }}/coverage
           flags: unit,${{ matrix.mode }},go-${{ matrix.go }}
@@ -111,7 +111,7 @@ jobs:
           targets: bench-${{ matrix.mode }}
       -
         name: Upload benchmark results
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           directory: ${{ env.DESTDIR }}/bench
           flags: bench,${{ matrix.mode }},go-${{ env.GO_VERSION }},file-size-${{ matrix.file-size || 'default' }}
@@ -148,7 +148,7 @@ jobs:
       -
         name: Upload coverage
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage.txt
           env_vars: RUNNER_OS
@@ -213,7 +213,7 @@ jobs:
       -
         name: Upload coverage
         if: always()
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage.txt
           flags: unit,${{ matrix.os }}
