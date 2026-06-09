@@ -13,6 +13,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // requiresRoot skips tests that require root
@@ -24,142 +25,207 @@ func requiresRoot(t *testing.T) {
 	}
 }
 
-func TestWriterSimple(t *testing.T) {
-	requiresRoot(t)
+type diskWriterTestWriter struct {
+	handleChange HandleChangeFn
+	wait         func(context.Context) error
+}
 
-	changes := changeStream([]string{
-		"ADD bar dir",
-		"ADD bar/foo file",
-		"ADD bar/foo2 symlink ../foo",
-		"ADD foo file",
-		"ADD foo2 file >foo",
-	})
+type diskWriterTestFactory struct {
+	name string
+	new  func(*testing.T, context.Context, string, DiskWriterOpt) diskWriterTestWriter
+}
 
-	dest := t.TempDir()
+func diskWriterTestFactories() []diskWriterTestFactory {
+	factories := []diskWriterTestFactory{
+		{
+			name: "DiskWriter",
+			new: func(t *testing.T, ctx context.Context, dest string, opt DiskWriterOpt) diskWriterTestWriter {
+				t.Helper()
 
-	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
-		SyncDataCb: noOpWriteTo,
-	})
-	assert.NoError(t, err)
+				dw, err := NewDiskWriter(ctx, dest, opt)
+				require.NoError(t, err)
 
-	for _, c := range changes {
-		err := dw.HandleChange(c.kind, c.path, c.fi, nil)
-		assert.NoError(t, err)
+				return diskWriterTestWriter{
+					handleChange: dw.HandleChange,
+					wait:         dw.Wait,
+				}
+			},
+		},
 	}
 
-	b := &bytes.Buffer{}
-	err = Walk(context.Background(), dest, nil, bufWalk(b))
-	assert.NoError(t, err)
+	factories = append(factories, diskWriterTestFactory{
+		name: "RootDiskWriter",
+		new: func(t *testing.T, ctx context.Context, dest string, opt DiskWriterOpt) diskWriterTestWriter {
+			t.Helper()
 
-	assert.Equal(t, `dir bar
+			osroot, err := os.OpenRoot(dest)
+			require.NoError(t, err)
+
+			destRoot := NewRoot(osroot)
+			t.Cleanup(func() {
+				require.NoError(t, destRoot.Close())
+			})
+
+			dw, err := NewRootDiskWriter(ctx, destRoot, opt)
+			require.NoError(t, err)
+
+			return diskWriterTestWriter{
+				handleChange: dw.HandleChange,
+				wait:         dw.Wait,
+			}
+		},
+	})
+
+	return factories
+}
+
+func TestWriterSimple(t *testing.T) {
+	for _, factory := range diskWriterTestFactories() {
+		t.Run(factory.name, func(t *testing.T) {
+			requiresRoot(t)
+
+			changes := changeStream([]string{
+				"ADD bar dir",
+				"ADD bar/foo file",
+				"ADD bar/foo2 symlink ../foo",
+				"ADD foo file",
+				"ADD foo2 file >foo",
+			})
+
+			dest := t.TempDir()
+
+			dw := factory.new(t, context.TODO(), dest, DiskWriterOpt{
+				SyncDataCb: noOpWriteTo,
+			})
+
+			for _, c := range changes {
+				err := dw.handleChange(c.kind, c.path, c.fi, nil)
+				assert.NoError(t, err)
+			}
+
+			b := &bytes.Buffer{}
+			err := Walk(context.Background(), dest, nil, bufWalk(b))
+			assert.NoError(t, err)
+
+			assert.Equal(t, `dir bar
 file bar/foo
 symlink:../foo bar/foo2
 file foo
 file foo2 >foo
 `, b.String())
-
+		})
+	}
 }
 
 func TestWriterFileToDir(t *testing.T) {
-	requiresRoot(t)
+	for _, factory := range diskWriterTestFactories() {
+		t.Run(factory.name, func(t *testing.T) {
+			requiresRoot(t)
 
-	changes := changeStream([]string{
-		"ADD foo dir",
-		"ADD foo/bar file data2",
-	})
+			changes := changeStream([]string{
+				"ADD foo dir",
+				"ADD foo/bar file data2",
+			})
 
-	dest, err := tmpDir(changeStream([]string{
-		"ADD foo file data1",
-	}))
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
+			dest, err := tmpDir(changeStream([]string{
+				"ADD foo file data1",
+			}))
+			assert.NoError(t, err)
+			defer os.RemoveAll(dest)
 
-	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
-		SyncDataCb: noOpWriteTo,
-	})
-	assert.NoError(t, err)
+			dw := factory.new(t, context.TODO(), dest, DiskWriterOpt{
+				SyncDataCb: noOpWriteTo,
+			})
 
-	for _, c := range changes {
-		err := dw.HandleChange(c.kind, c.path, c.fi, nil)
-		assert.NoError(t, err)
-	}
+			for _, c := range changes {
+				err := dw.handleChange(c.kind, c.path, c.fi, nil)
+				assert.NoError(t, err)
+			}
 
-	b := &bytes.Buffer{}
-	err = Walk(context.Background(), dest, nil, bufWalk(b))
-	assert.NoError(t, err)
+			b := &bytes.Buffer{}
+			err = Walk(context.Background(), dest, nil, bufWalk(b))
+			assert.NoError(t, err)
 
-	assert.Equal(t, `dir foo
+			assert.Equal(t, `dir foo
 file foo/bar
 `, b.String())
+		})
+	}
 }
 
 func TestWriterDirToFile(t *testing.T) {
-	requiresRoot(t)
+	for _, factory := range diskWriterTestFactories() {
+		t.Run(factory.name, func(t *testing.T) {
+			requiresRoot(t)
 
-	changes := changeStream([]string{
-		"ADD foo file data1",
-	})
+			changes := changeStream([]string{
+				"ADD foo file data1",
+			})
 
-	dest, err := tmpDir(changeStream([]string{
-		"ADD foo dir",
-		"ADD foo/bar file data2",
-	}))
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
+			dest, err := tmpDir(changeStream([]string{
+				"ADD foo dir",
+				"ADD foo/bar file data2",
+			}))
+			assert.NoError(t, err)
+			defer os.RemoveAll(dest)
 
-	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
-		SyncDataCb: noOpWriteTo,
-	})
-	assert.NoError(t, err)
+			dw := factory.new(t, context.TODO(), dest, DiskWriterOpt{
+				SyncDataCb: noOpWriteTo,
+			})
 
-	for _, c := range changes {
-		err := dw.HandleChange(c.kind, c.path, c.fi, nil)
-		assert.NoError(t, err)
-	}
+			for _, c := range changes {
+				err := dw.handleChange(c.kind, c.path, c.fi, nil)
+				assert.NoError(t, err)
+			}
 
-	b := &bytes.Buffer{}
-	err = Walk(context.Background(), dest, nil, bufWalk(b))
-	assert.NoError(t, err)
+			b := &bytes.Buffer{}
+			err = Walk(context.Background(), dest, nil, bufWalk(b))
+			assert.NoError(t, err)
 
-	assert.Equal(t, `file foo
+			assert.Equal(t, `file foo
 `, b.String())
+		})
+	}
 }
 
 func TestWalkerWriterSimple(t *testing.T) {
-	d, err := tmpDir(changeStream([]string{
-		"ADD bar dir",
-		"ADD bar/foo file",
-		"ADD bar/foo2 symlink ../foo",
-		"ADD foo file mydata",
-		"ADD foo2 file",
-	}))
-	assert.NoError(t, err)
-	defer os.RemoveAll(d)
+	for _, factory := range diskWriterTestFactories() {
+		t.Run(factory.name, func(t *testing.T) {
+			d, err := tmpDir(changeStream([]string{
+				"ADD bar dir",
+				"ADD bar/foo file",
+				"ADD bar/foo2 symlink ../foo",
+				"ADD foo file mydata",
+				"ADD foo2 file",
+			}))
+			assert.NoError(t, err)
+			defer os.RemoveAll(d)
 
-	dest := t.TempDir()
+			dest := t.TempDir()
 
-	dw, err := NewDiskWriter(context.TODO(), dest, DiskWriterOpt{
-		SyncDataCb: newWriteToFunc(d, 0),
-	})
-	assert.NoError(t, err)
+			dw := factory.new(t, context.TODO(), dest, DiskWriterOpt{
+				SyncDataCb: newWriteToFunc(d, 0),
+			})
 
-	err = Walk(context.Background(), d, nil, readAsAdd(dw.HandleChange))
-	assert.NoError(t, err)
+			err = Walk(context.Background(), d, nil, readAsAdd(dw.handleChange))
+			assert.NoError(t, err)
 
-	b := &bytes.Buffer{}
-	err = Walk(context.Background(), dest, nil, bufWalk(b))
-	assert.NoError(t, err)
+			b := &bytes.Buffer{}
+			err = Walk(context.Background(), dest, nil, bufWalk(b))
+			assert.NoError(t, err)
 
-	assert.Equal(t, filepath.FromSlash(`dir bar
+			assert.Equal(t, filepath.FromSlash(`dir bar
 file bar/foo
 symlink:../foo bar/foo2
 file foo
 file foo2
 `), b.String())
 
-	dt, err := os.ReadFile(filepath.Join(dest, "foo"))
-	assert.NoError(t, err)
-	assert.Equal(t, []byte("mydata"), dt)
+			dt, err := os.ReadFile(filepath.Join(dest, "foo"))
+			assert.NoError(t, err)
+			assert.Equal(t, []byte("mydata"), dt)
+		})
+	}
 }
 
 func readAsAdd(f HandleChangeFn) filepath.WalkFunc {

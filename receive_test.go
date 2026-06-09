@@ -23,165 +23,302 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func TestSendError(t *testing.T) {
-	fs := &testErrFS{err: errors.New("foo bar")}
+type receiveTestFunc func(context.Context, Stream, string, ReceiveOpt) error
 
-	dest := t.TempDir()
+func forEachReceiveDiskWriter(t *testing.T, fn func(*testing.T, receiveTestFunc)) {
+	t.Helper()
 
-	ts := newNotificationBuffer()
-	chs := &changes{fn: ts.HandleChange}
+	receivers := []struct {
+		name    string
+		receive receiveTestFunc
+	}{
+		{
+			name:    "DiskWriter",
+			receive: Receive,
+		},
+	}
 
-	eg, ctx := errgroup.WithContext(context.Background())
-	s1, s2 := sockPairProto(ctx)
+	receivers = append(receivers, struct {
+		name    string
+		receive receiveTestFunc
+	}{
+		name: "RootDiskWriter",
+		receive: func(ctx context.Context, conn Stream, dest string, opt ReceiveOpt) error {
+			osroot, err := os.OpenRoot(dest)
+			if err != nil {
+				return errors.WithStack(err)
+			}
+			destRoot := NewRoot(osroot)
 
-	eg.Go(func() error {
-		defer s1.(*fakeConnProto).closeSend()
-		err := Send(ctx, s1, fs, nil)
-		assert.Contains(t, err.Error(), "foo bar")
-		return err
+			err = ReceiveRoot(ctx, conn, destRoot, opt)
+			if closeErr := destRoot.Close(); err == nil {
+				err = closeErr
+			}
+			return err
+		},
 	})
-	eg.Go(func() error {
-		err := Receive(ctx, s2, dest, ReceiveOpt{
-			NotifyHashed:  chs.HandleChange,
-			ContentHasher: simpleSHA256Hasher,
+
+	for _, receiver := range receivers {
+		t.Run(receiver.name, func(t *testing.T) {
+			fn(t, receiver.receive)
 		})
-		assert.Contains(t, err.Error(), "error from sender:")
-		assert.Contains(t, err.Error(), "foo bar")
-		return err
-	})
-
-	errCh := make(chan error)
-	go func() {
-		errCh <- eg.Wait()
-	}()
-	select {
-	case <-time.After(15 * time.Second):
-		t.Fatal("timeout")
-	case err := <-errCh:
-		assert.Contains(t, err.Error(), "foo bar")
 	}
 }
 
-func TestCopyWithSubDir(t *testing.T) {
-	requiresRoot(t)
+func TestSendError(t *testing.T) {
+	forEachReceiveDiskWriter(t, func(t *testing.T, receive receiveTestFunc) {
+		fs := &testErrFS{err: errors.New("foo bar")}
 
-	d, err := tmpDir(changeStream([]string{
-		"ADD foo dir",
-		"ADD foo/bar file data1",
-	}))
-	assert.NoError(t, err)
-	defer os.RemoveAll(d)
-	fs, err := NewFS(d)
-	assert.NoError(t, err)
+		dest := t.TempDir()
 
-	dest := t.TempDir()
-
-	eg, ctx := errgroup.WithContext(context.Background())
-	s1, s2 := sockPairProto(ctx)
-
-	eg.Go(func() error {
-		defer s1.(*fakeConnProto).closeSend()
-		subdir, err := SubDirFS([]Dir{{FS: fs, Stat: &types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
-		if err != nil {
-			return err
-		}
-		return Send(ctx, s1, subdir, nil)
-	})
-	eg.Go(func() error {
-		return Receive(ctx, s2, dest, ReceiveOpt{})
-	})
-
-	err = eg.Wait()
-	assert.NoError(t, err)
-
-	dt, err := os.ReadFile(filepath.Join(dest, "sub/foo/bar"))
-	assert.NoError(t, err)
-	assert.Equal(t, "data1", string(dt))
-}
-
-func TestCopyDirectoryTimestamps(t *testing.T) {
-	d, err := tmpDir(changeStream([]string{
-		"ADD foo dir",
-		"ADD foo/bar file data1",
-	}))
-	assert.NoError(t, err)
-	defer os.RemoveAll(d)
-	fs, err := NewFS(d)
-	assert.NoError(t, err)
-
-	timestamp := time.Unix(0, 0)
-	require.NoError(t, os.Chtimes(filepath.Join(d, "foo"), timestamp, timestamp))
-
-	dest := t.TempDir()
-
-	eg, ctx := errgroup.WithContext(context.Background())
-	s1, s2 := sockPairProto(ctx)
-
-	eg.Go(func() error {
-		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, fs, nil)
-	})
-	eg.Go(func() error {
-		return Receive(ctx, s2, dest, ReceiveOpt{})
-	})
-
-	err = eg.Wait()
-	assert.NoError(t, err)
-
-	dt, err := os.ReadFile(filepath.Join(dest, "foo/bar"))
-	assert.NoError(t, err)
-	assert.Equal(t, "data1", string(dt))
-
-	stat, err := os.Stat(filepath.Join(dest, "foo"))
-	require.NoError(t, err)
-	assert.Equal(t, timestamp, stat.ModTime())
-}
-
-func TestCopySwitchDirToFile(t *testing.T) {
-	d, err := tmpDir(changeStream([]string{
-		"ADD foo file data1",
-	}))
-	assert.NoError(t, err)
-	defer os.RemoveAll(d)
-
-	dest, err := tmpDir(changeStream([]string{
-		"ADD foo dir",
-		"ADD foo/bar file data2",
-	}))
-	assert.NoError(t, err)
-	defer os.RemoveAll(dest)
-
-	copy := func(src, dest string) (*changes, error) {
 		ts := newNotificationBuffer()
 		chs := &changes{fn: ts.HandleChange}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var eg errgroup.Group
+		s1, s2 := sockPairProto(ctx)
+
+		eg.Go(func() error {
+			defer s1.(*fakeConnProto).closeSend()
+			err := Send(ctx, s1, fs, nil)
+			assert.Contains(t, err.Error(), "foo bar")
+			return err
+		})
+		eg.Go(func() error {
+			err := receive(ctx, s2, dest, ReceiveOpt{
+				NotifyHashed:  chs.HandleChange,
+				ContentHasher: simpleSHA256Hasher,
+			})
+			assert.Contains(t, err.Error(), "error from sender:")
+			assert.Contains(t, err.Error(), "foo bar")
+			return err
+		})
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- eg.Wait()
+		}()
+		select {
+		case <-time.After(15 * time.Second):
+			cancel()
+			t.Fatal("timeout")
+		case err := <-errCh:
+			assert.Contains(t, err.Error(), "foo bar")
+		}
+	})
+}
+
+func TestCopyWithSubDir(t *testing.T) {
+	forEachReceiveDiskWriter(t, func(t *testing.T, receive receiveTestFunc) {
+		requiresRoot(t)
+
+		d, err := tmpDir(changeStream([]string{
+			"ADD foo dir",
+			"ADD foo/bar file data1",
+		}))
+		assert.NoError(t, err)
+		defer os.RemoveAll(d)
+		fs, err := NewFS(d)
+		assert.NoError(t, err)
+
+		dest := t.TempDir()
 
 		eg, ctx := errgroup.WithContext(context.Background())
 		s1, s2 := sockPairProto(ctx)
 
-		fs, err := NewFS(src)
-		if err != nil {
-			return nil, err
-		}
-		fs, err = NewFilterFS(fs, &FilterOpt{
-			Map: func(_ string, s *types.Stat) MapResult {
-				s.Uid = 0
-				s.Gid = 0
-				return MapResultKeep
-			},
+		eg.Go(func() error {
+			defer s1.(*fakeConnProto).closeSend()
+			subdir, err := SubDirFS([]Dir{{FS: fs, Stat: &types.Stat{Path: "sub", Mode: uint32(os.ModeDir | 0755)}}})
+			if err != nil {
+				return err
+			}
+			return Send(ctx, s1, subdir, nil)
 		})
-		if err != nil {
-			return nil, err
-		}
+		eg.Go(func() error {
+			return receive(ctx, s2, dest, ReceiveOpt{})
+		})
+
+		err = eg.Wait()
+		assert.NoError(t, err)
+
+		dt, err := os.ReadFile(filepath.Join(dest, "sub/foo/bar"))
+		assert.NoError(t, err)
+		assert.Equal(t, "data1", string(dt))
+	})
+}
+
+func TestCopyDirectoryTimestamps(t *testing.T) {
+	forEachReceiveDiskWriter(t, func(t *testing.T, receive receiveTestFunc) {
+		d, err := tmpDir(changeStream([]string{
+			"ADD foo dir",
+			"ADD foo/bar dir",
+			"ADD foo/bar/baz file data1",
+		}))
+		assert.NoError(t, err)
+		defer os.RemoveAll(d)
+		fs, err := NewFS(d)
+		assert.NoError(t, err)
+
+		timestamp := time.Unix(0, 0)
+		require.NoError(t, os.Chtimes(filepath.Join(d, "foo"), timestamp, timestamp))
+		require.NoError(t, os.Chtimes(filepath.Join(d, "foo", "bar"), timestamp, timestamp))
+
+		dest := t.TempDir()
+
+		eg, ctx := errgroup.WithContext(context.Background())
+		s1, s2 := sockPairProto(ctx)
 
 		eg.Go(func() error {
 			defer s1.(*fakeConnProto).closeSend()
 			return Send(ctx, s1, fs, nil)
 		})
 		eg.Go(func() error {
-			return Receive(ctx, s2, dest, ReceiveOpt{
-				NotifyHashed:  chs.HandleChange,
-				ContentHasher: simpleSHA256Hasher,
-				Filter: func(_ string, s *types.Stat) bool {
+			return receive(ctx, s2, dest, ReceiveOpt{})
+		})
+
+		err = eg.Wait()
+		assert.NoError(t, err)
+
+		dt, err := os.ReadFile(filepath.Join(dest, "foo", "bar", "baz"))
+		assert.NoError(t, err)
+		assert.Equal(t, "data1", string(dt))
+
+		stat, err := os.Stat(filepath.Join(dest, "foo"))
+		require.NoError(t, err)
+		assert.Equal(t, timestamp, stat.ModTime())
+
+		stat, err = os.Stat(filepath.Join(dest, "foo", "bar"))
+		require.NoError(t, err)
+		assert.Equal(t, timestamp, stat.ModTime())
+	})
+}
+
+func TestCopySwitchDirToFile(t *testing.T) {
+	forEachReceiveDiskWriter(t, func(t *testing.T, receive receiveTestFunc) {
+		d, err := tmpDir(changeStream([]string{
+			"ADD foo file data1",
+		}))
+		assert.NoError(t, err)
+		defer os.RemoveAll(d)
+
+		dest, err := tmpDir(changeStream([]string{
+			"ADD foo dir",
+			"ADD foo/bar file data2",
+		}))
+		assert.NoError(t, err)
+		defer os.RemoveAll(dest)
+
+		copy := func(src, dest string) (*changes, error) {
+			ts := newNotificationBuffer()
+			chs := &changes{fn: ts.HandleChange}
+
+			eg, ctx := errgroup.WithContext(context.Background())
+			s1, s2 := sockPairProto(ctx)
+
+			fs, err := NewFS(src)
+			if err != nil {
+				return nil, err
+			}
+			fs, err = NewFilterFS(fs, &FilterOpt{
+				Map: func(_ string, s *types.Stat) MapResult {
+					s.Uid = 0
+					s.Gid = 0
+					return MapResultKeep
+				},
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			eg.Go(func() error {
+				defer s1.(*fakeConnProto).closeSend()
+				return Send(ctx, s1, fs, nil)
+			})
+			eg.Go(func() error {
+				return receive(ctx, s2, dest, ReceiveOpt{
+					NotifyHashed:  chs.HandleChange,
+					ContentHasher: simpleSHA256Hasher,
+					Filter: func(_ string, s *types.Stat) bool {
+						if runtime.GOOS != "windows" {
+							// On Windows, Getuid() and Getgid() always return -1
+							// See: https://pkg.go.dev/os#Getgid
+							// See: https://pkg.go.dev/os#Geteuid
+							s.Uid = uint32(os.Getuid())
+							s.Gid = uint32(os.Getgid())
+						}
+						return true
+					},
+				})
+			})
+
+			if err := eg.Wait(); err != nil {
+				return nil, err
+			}
+
+			return chs, nil
+		}
+
+		chs, err := copy(d, dest)
+		require.NoError(t, err)
+
+		k, ok := chs.c["foo"]
+		require.True(t, ok)
+		require.Equal(t, k, ChangeKindAdd)
+		require.Equal(t, len(chs.c), 1)
+
+		b := &bytes.Buffer{}
+		err = Walk(context.Background(), dest, nil, bufWalk(b))
+		assert.NoError(t, err)
+
+		assert.Equal(t, `file foo
+`, b.String())
+	})
+}
+
+func TestHardlinkFilter(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hardlink stat linknames are not populated on windows")
+	}
+
+	forEachReceiveDiskWriter(t, func(t *testing.T, receive receiveTestFunc) {
+		d, err := tmpDir(changeStream([]string{
+			"ADD bar file data1",
+			"ADD foo file >bar",
+			"ADD foo2 file >bar",
+		}))
+		assert.NoError(t, err)
+		defer os.RemoveAll(d)
+
+		fs, err := NewFS(d)
+		assert.NoError(t, err)
+		fs, err = NewFilterFS(fs, &FilterOpt{})
+		assert.NoError(t, err)
+		fs, err = NewFilterFS(fs, &FilterOpt{
+			IncludePatterns: []string{"foo*"},
+			Map: func(_ string, s *types.Stat) MapResult {
+				s.Uid = 0
+				s.Gid = 0
+				return MapResultKeep
+			},
+		})
+		assert.NoError(t, err)
+
+		dest := t.TempDir()
+
+		eg, ctx := errgroup.WithContext(context.Background())
+		s1, s2 := sockPairProto(ctx)
+
+		eg.Go(func() error {
+			defer s1.(*fakeConnProto).closeSend()
+			return Send(ctx, s1, fs, nil)
+		})
+		eg.Go(func() error {
+			return receive(ctx, s2, dest, ReceiveOpt{
+				Filter: func(p string, s *types.Stat) bool {
+					if p == "foo2" {
+						require.Equal(t, "foo", s.Linkname)
+					}
 					if runtime.GOOS != "windows" {
 						// On Windows, Getuid() and Getgid() always return -1
 						// See: https://pkg.go.dev/os#Getgid
@@ -193,101 +330,27 @@ func TestCopySwitchDirToFile(t *testing.T) {
 				},
 			})
 		})
+		assert.NoError(t, eg.Wait())
 
-		if err := eg.Wait(); err != nil {
-			return nil, err
-		}
+		dt, err := os.ReadFile(filepath.Join(dest, "foo"))
+		assert.NoError(t, err)
+		assert.Equal(t, "data1", string(dt))
 
-		return chs, nil
-	}
+		st1, err := os.Stat(filepath.Join(dest, "foo"))
+		assert.NoError(t, err)
 
-	chs, err := copy(d, dest)
-	require.NoError(t, err)
+		st2, err := os.Stat(filepath.Join(dest, "foo2"))
+		assert.NoError(t, err)
 
-	k, ok := chs.c["foo"]
-	require.True(t, ok)
-	require.Equal(t, k, ChangeKindAdd)
-	require.Equal(t, len(chs.c), 1)
-
-	b := &bytes.Buffer{}
-	err = Walk(context.Background(), dest, nil, bufWalk(b))
-	assert.NoError(t, err)
-
-	assert.Equal(t, `file foo
-`, b.String())
-}
-
-func TestHardlinkFilter(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("hardlink stat linknames are not populated on windows")
-	}
-
-	d, err := tmpDir(changeStream([]string{
-		"ADD bar file data1",
-		"ADD foo file >bar",
-		"ADD foo2 file >bar",
-	}))
-	assert.NoError(t, err)
-	defer os.RemoveAll(d)
-
-	assert.NoError(t, err)
-	defer os.RemoveAll(d)
-	fs, err := NewFS(d)
-	assert.NoError(t, err)
-	fs, err = NewFilterFS(fs, &FilterOpt{})
-	assert.NoError(t, err)
-	fs, err = NewFilterFS(fs, &FilterOpt{
-		IncludePatterns: []string{"foo*"},
-		Map: func(_ string, s *types.Stat) MapResult {
-			s.Uid = 0
-			s.Gid = 0
-			return MapResultKeep
-		},
+		assert.True(t, os.SameFile(st1, st2))
 	})
-	assert.NoError(t, err)
-
-	dest := t.TempDir()
-
-	eg, ctx := errgroup.WithContext(context.Background())
-	s1, s2 := sockPairProto(ctx)
-
-	eg.Go(func() error {
-		defer s1.(*fakeConnProto).closeSend()
-		return Send(ctx, s1, fs, nil)
-	})
-	eg.Go(func() error {
-		return Receive(ctx, s2, dest, ReceiveOpt{
-			Filter: func(p string, s *types.Stat) bool {
-				if p == "foo2" {
-					require.Equal(t, "foo", s.Linkname)
-				}
-				if runtime.GOOS != "windows" {
-					// On Windows, Getuid() and Getgid() always return -1
-					// See: https://pkg.go.dev/os#Getgid
-					// See: https://pkg.go.dev/os#Geteuid
-					s.Uid = uint32(os.Getuid())
-					s.Gid = uint32(os.Getgid())
-				}
-				return true
-			},
-		})
-	})
-	assert.NoError(t, eg.Wait())
-
-	dt, err := os.ReadFile(filepath.Join(dest, "foo"))
-	assert.NoError(t, err)
-	assert.Equal(t, "data1", string(dt))
-
-	st1, err := os.Stat(filepath.Join(dest, "foo"))
-	assert.NoError(t, err)
-
-	st2, err := os.Stat(filepath.Join(dest, "foo2"))
-	assert.NoError(t, err)
-
-	assert.True(t, os.SameFile(st1, st2))
 }
 
 func TestCopySimple(t *testing.T) {
+	forEachReceiveDiskWriter(t, testCopySimple)
+}
+
+func testCopySimple(t *testing.T, receive receiveTestFunc) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo file data1",
 		"ADD foo2 file dat2",
@@ -331,7 +394,7 @@ func TestCopySimple(t *testing.T) {
 		return Send(ctx, s1, fs, progressCb)
 	})
 	eg.Go(func() error {
-		return Receive(ctx, s2, dest, ReceiveOpt{
+		return receive(ctx, s2, dest, ReceiveOpt{
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
 			Filter: func(p string, s *types.Stat) bool {
@@ -433,7 +496,7 @@ file zzz.aa
 		return Send(ctx, s1, fs, nil)
 	})
 	eg.Go(func() error {
-		return Receive(ctx, s2, dest, ReceiveOpt{
+		return receive(ctx, s2, dest, ReceiveOpt{
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
 			Filter: func(_ string, s *types.Stat) bool {
@@ -517,6 +580,10 @@ file zzz.aa
 }
 
 func TestCopyMetadataOnly(t *testing.T) {
+	forEachReceiveDiskWriter(t, testCopyMetadataOnly)
+}
+
+func testCopyMetadataOnly(t *testing.T, receive receiveTestFunc) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo file data1",
 		"ADD foo2 file dat2",
@@ -556,7 +623,7 @@ func TestCopyMetadataOnly(t *testing.T) {
 		return Send(ctx, s1, fs, progressCb)
 	})
 	eg.Go(func() error {
-		return Receive(ctx, s2, dest, ReceiveOpt{
+		return receive(ctx, s2, dest, ReceiveOpt{
 			NotifyHashed:  chs.HandleChange,
 			ContentHasher: simpleSHA256Hasher,
 			Filter: func(p string, s *types.Stat) bool {
