@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
@@ -318,7 +317,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 		}
 		stat, ok := fi.Sys().(*types.Stat)
 		if !ok {
-			return errors.WithStack(&os.PathError{Path: path, Err: syscall.EBADMSG, Op: "fileinfo without stat info"})
+			return errors.WithStack(&os.PathError{Path: path, Err: EBADMSG, Op: "fileinfo without stat info"})
 		}
 
 		select {
@@ -346,7 +345,7 @@ func (fs *filterFS) Walk(ctx context.Context, target string, fn gofs.WalkDirFunc
 				}
 				parentStat, ok := parentFi.Sys().(*types.Stat)
 				if !ok {
-					return errors.WithStack(&os.PathError{Path: path, Err: syscall.EBADMSG, Op: "fileinfo without stat info"})
+					return errors.WithStack(&os.PathError{Path: path, Err: EBADMSG, Op: "fileinfo without stat info"})
 				}
 
 				select {
@@ -425,5 +424,5 @@ func patternWithoutTrailingGlob(p *patternmatcher.Pattern) string {
 }
 
 func isNotExist(err error) bool {
-	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR)
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, ENOTDIR)
 }
