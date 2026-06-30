@@ -131,7 +131,7 @@ jobs:
     steps:
       -
         name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       -
         name: Set up Go
         uses: actions/setup-go@v6
@@ -173,7 +173,7 @@ jobs:
           echo "GO_VERSION=$goVersion" >> $GITHUB_ENV
       -
         name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       -
         name: Cache Vagrant boxes
         uses: actions/cache@v5
