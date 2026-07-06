@@ -1,5 +1,4 @@
 //go:build solaris || darwin || freebsd || openbsd || netbsd
-// +build solaris darwin freebsd openbsd netbsd
 
 package fs
 
