@@ -5,7 +5,6 @@ import (
 	"io"
 	gofs "io/fs"
 	"os"
-	"syscall"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
@@ -32,7 +31,7 @@ func (v *Hardlinks) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err 
 
 	stat, ok := fi.Sys().(*types.Stat)
 	if !ok {
-		return errors.WithStack(&os.PathError{Path: p, Err: syscall.EBADMSG, Op: "change without stat info"})
+		return errors.WithStack(&os.PathError{Path: p, Err: EBADMSG, Op: "change without stat info"})
 	}
 
 	if fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
@@ -80,7 +79,7 @@ func (r *hardlinkFilter) Walk(ctx context.Context, target string, fn gofs.WalkDi
 
 		stat, ok := fi.Sys().(*types.Stat)
 		if !ok {
-			return errors.WithStack(&os.PathError{Path: path, Err: syscall.EBADMSG, Op: "fileinfo without stat info"})
+			return errors.WithStack(&os.PathError{Path: path, Err: EBADMSG, Op: "fileinfo without stat info"})
 		}
 
 		if stat.Linkname != "" {

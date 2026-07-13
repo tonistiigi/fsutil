@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"sort"
 	strings "strings"
-	"syscall"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
@@ -122,7 +121,7 @@ func (r *symlinkResolver) readSymlink(p string, allowWildcard bool) ([]string, e
 	}
 	stat, ok := fi.Sys().(*types.Stat)
 	if !ok {
-		return nil, errors.WithStack(&os.PathError{Path: p, Err: syscall.EBADMSG, Op: "fileinfo without stat info"})
+		return nil, errors.WithStack(&os.PathError{Path: p, Err: EBADMSG, Op: "fileinfo without stat info"})
 	}
 
 	link := filepath.Clean(stat.Linkname)
@@ -180,7 +179,7 @@ func readDir(fs FS, root string) ([]os.DirEntry, error) {
 		}
 		if p == root {
 			if !entry.IsDir() {
-				return errors.WithStack(&os.PathError{Op: "walk", Path: root, Err: syscall.ENOTDIR})
+				return errors.WithStack(&os.PathError{Op: "walk", Path: root, Err: ENOTDIR})
 			}
 			out = make([]gofs.DirEntry, 0)
 			return nil

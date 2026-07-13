@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/pkg/errors"
 )
@@ -28,10 +27,10 @@ func (v *Validator) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err 
 		v.parentDirs = make([]parent, 1, 10)
 	}
 	if p != filepath.Clean(p) {
-		return errors.WithStack(&os.PathError{Path: p, Err: syscall.EINVAL, Op: "unclean path"})
+		return errors.WithStack(&os.PathError{Path: p, Err: EINVAL, Op: "unclean path"})
 	}
 	if filepath.IsAbs(p) {
-		return errors.WithStack(&os.PathError{Path: p, Err: syscall.EINVAL, Op: "absolute path"})
+		return errors.WithStack(&os.PathError{Path: p, Err: EINVAL, Op: "absolute path"})
 	}
 	dir := filepath.Dir(p)
 	base := filepath.Base(p)
@@ -39,7 +38,7 @@ func (v *Validator) HandleChange(kind ChangeKind, p string, fi os.FileInfo, err 
 		dir = ""
 	}
 	if dir == ".." || strings.HasPrefix(p, filepath.FromSlash("../")) {
-		return errors.WithStack(&os.PathError{Path: p, Err: syscall.EINVAL, Op: "escape check"})
+		return errors.WithStack(&os.PathError{Path: p, Err: EINVAL, Op: "escape check"})
 	}
 
 	// find a parent dir from saved records

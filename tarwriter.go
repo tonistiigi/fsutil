@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil/types"
@@ -26,7 +25,7 @@ func WriteTar(ctx context.Context, fs FS, w io.Writer) error {
 		}
 		stat, ok := fi.Sys().(*types.Stat)
 		if !ok {
-			return errors.WithStack(&os.PathError{Path: path, Err: syscall.EBADMSG, Op: "fileinfo without stat info"})
+			return errors.WithStack(&os.PathError{Path: path, Err: EBADMSG, Op: "fileinfo without stat info"})
 		}
 		hdr, err := tar.FileInfoHeader(fi, stat.Linkname)
 		if err != nil {
