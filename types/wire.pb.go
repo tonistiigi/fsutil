@@ -25,11 +25,13 @@ const (
 type Packet_PacketType int32
 
 const (
-	Packet_PACKET_STAT Packet_PacketType = 0
-	Packet_PACKET_REQ  Packet_PacketType = 1
-	Packet_PACKET_DATA Packet_PacketType = 2
-	Packet_PACKET_FIN  Packet_PacketType = 3
-	Packet_PACKET_ERR  Packet_PacketType = 4
+	Packet_PACKET_STAT     Packet_PacketType = 0
+	Packet_PACKET_REQ      Packet_PacketType = 1
+	Packet_PACKET_DATA     Packet_PacketType = 2
+	Packet_PACKET_FIN      Packet_PacketType = 3
+	Packet_PACKET_ERR      Packet_PacketType = 4
+	Packet_PACKET_HASH_REQ Packet_PacketType = 5
+	Packet_PACKET_HASH     Packet_PacketType = 6
 )
 
 // Enum value maps for Packet_PacketType.
@@ -40,13 +42,17 @@ var (
 		2: "PACKET_DATA",
 		3: "PACKET_FIN",
 		4: "PACKET_ERR",
+		5: "PACKET_HASH_REQ",
+		6: "PACKET_HASH",
 	}
 	Packet_PacketType_value = map[string]int32{
-		"PACKET_STAT": 0,
-		"PACKET_REQ":  1,
-		"PACKET_DATA": 2,
-		"PACKET_FIN":  3,
-		"PACKET_ERR":  4,
+		"PACKET_STAT":     0,
+		"PACKET_REQ":      1,
+		"PACKET_DATA":     2,
+		"PACKET_FIN":      3,
+		"PACKET_ERR":      4,
+		"PACKET_HASH_REQ": 5,
+		"PACKET_HASH":     6,
 	}
 )
 
@@ -149,12 +155,12 @@ var File_github_com_tonistiigi_fsutil_types_wire_proto protoreflect.FileDescript
 
 const file_github_com_tonistiigi_fsutil_types_wire_proto_rawDesc = "" +
 	"\n" +
-	"-github.com/tonistiigi/fsutil/types/wire.proto\x12\ffsutil.types\x1a3github.com/planetscale/vtprotobuf/vtproto/ext.proto\x1a-github.com/tonistiigi/fsutil/types/stat.proto\"\xef\x01\n" +
+	"-github.com/tonistiigi/fsutil/types/wire.proto\x12\ffsutil.types\x1a3github.com/planetscale/vtprotobuf/vtproto/ext.proto\x1a-github.com/tonistiigi/fsutil/types/stat.proto\"\x96\x02\n" +
 	"\x06Packet\x123\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x1f.fsutil.types.Packet.PacketTypeR\x04type\x12&\n" +
 	"\x04stat\x18\x02 \x01(\v2\x12.fsutil.types.StatR\x04stat\x12\x0e\n" +
 	"\x02ID\x18\x03 \x01(\rR\x02ID\x12\x12\n" +
-	"\x04data\x18\x04 \x01(\fR\x04data\"^\n" +
+	"\x04data\x18\x04 \x01(\fR\x04data\"\x84\x01\n" +
 	"\n" +
 	"PacketType\x12\x0f\n" +
 	"\vPACKET_STAT\x10\x00\x12\x0e\n" +
@@ -164,7 +170,9 @@ const file_github_com_tonistiigi_fsutil_types_wire_proto_rawDesc = "" +
 	"\n" +
 	"PACKET_FIN\x10\x03\x12\x0e\n" +
 	"\n" +
-	"PACKET_ERR\x10\x04:\x04\xa8\xa6\x1f\x01B$Z\"github.com/tonistiigi/fsutil/typesb\x06proto3"
+	"PACKET_ERR\x10\x04\x12\x13\n" +
+	"\x0fPACKET_HASH_REQ\x10\x05\x12\x0f\n" +
+	"\vPACKET_HASH\x10\x06:\x04\xa8\xa6\x1f\x01B$Z\"github.com/tonistiigi/fsutil/typesb\x06proto3"
 
 var (
 	file_github_com_tonistiigi_fsutil_types_wire_proto_rawDescOnce sync.Once

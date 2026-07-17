@@ -7,6 +7,10 @@
 //   STAT packets that describe each file (an empty stat indicates EOF).
 // - The receiver sends a REQ packet for each file it requires the contents for,
 //   using the ID for the file (determined as its index in the STAT sequence).
+// - If content-based diffing is enabled, the receiver may first send HASH_REQ
+//   packets for files whose metadata matches. The sender replies with HASH
+//   packets containing SHA256 digests, allowing the receiver to avoid REQ for
+//   unchanged files.
 // - The sender sends a DATA packet with byte arrays for the contents of the
 //   file, associated with an ID (an empty array indicates EOF).
 // - Once the receiver has received all files it wants, it sends a FIN packet,
@@ -92,6 +96,7 @@ func newReceiver(conn Stream, opt ReceiveOpt) *receiver {
 		conn:          &syncStream{Stream: conn},
 		files:         make(map[string]uint32),
 		pipes:         make(map[uint32]io.WriteCloser),
+		hashWaiters:   make(map[uint32]chan hashResult),
 		notifyHashed:  opt.NotifyHashed,
 		contentHasher: opt.ContentHasher,
 		progressCb:    opt.ProgressCb,
@@ -108,8 +113,10 @@ type receiver struct {
 	conn         Stream
 	files        map[string]uint32
 	pipes        map[uint32]io.WriteCloser
+	hashWaiters  map[uint32]chan hashResult
 	mu           sync.RWMutex
 	muPipes      sync.RWMutex
+	muHash       sync.Mutex
 	progressCb   func(int, bool)
 	merge        bool
 	filter       FilterFunc
@@ -248,6 +255,10 @@ func (r *receiver) run(ctx context.Context) error {
 			switch p.Type {
 			case types.PACKET_ERR:
 				return errors.Errorf("error from sender: %s", p.Data)
+			case types.PACKET_HASH:
+				if err := r.handleHashResponse(p.ID, p.Data); err != nil {
+					return err
+				}
 			case types.PACKET_STAT:
 				if p.Stat == nil {
 					if err := w.update(nil); err != nil {
@@ -281,6 +292,7 @@ func (r *receiver) run(ctx context.Context) error {
 				p.Stat.Path = path
 				p.Stat.Linkname = filepath.FromSlash(p.Stat.Linkname)
 
+				id := i
 				if !metaOnly && fileCanRequestData(os.FileMode(p.Stat.Mode)) {
 					r.mu.Lock()
 					r.files[p.Stat.Path] = i
@@ -289,6 +301,9 @@ func (r *receiver) run(ctx context.Context) error {
 				i++
 
 				cp := &currentPath{path: path, stat: p.Stat}
+				if !metaOnly && r.differ == DiffContent && canContentCheck(p.Stat) {
+					cp.contentHash = r.sourceContentHash(id)
+				}
 				if err := r.orderValidator.HandleChange(ChangeKindAdd, cp.path, &StatInfo{cp.stat}, nil); err != nil {
 					return err
 				}
@@ -432,6 +447,57 @@ func (r *receiver) asyncDataFunc(ctx context.Context, p string, wc io.WriteClose
 	r.muPipes.Lock()
 	delete(r.pipes, id)
 	r.muPipes.Unlock()
+	return nil
+}
+
+type hashResult struct {
+	digest []byte
+}
+
+func (r *receiver) sourceContentHash(id uint32) func(context.Context) ([]byte, error) {
+	return func(ctx context.Context) ([]byte, error) {
+		ch := make(chan hashResult, 1)
+
+		r.muHash.Lock()
+		if _, ok := r.hashWaiters[id]; ok {
+			r.muHash.Unlock()
+			return nil, errors.Errorf("duplicate hash request %d", id)
+		}
+		r.hashWaiters[id] = ch
+		r.muHash.Unlock()
+
+		cleanup := func() {
+			r.muHash.Lock()
+			delete(r.hashWaiters, id)
+			r.muHash.Unlock()
+		}
+
+		if err := r.conn.SendMsg(&types.Packet{Type: types.PACKET_HASH_REQ, ID: id}); err != nil {
+			cleanup()
+			return nil, err
+		}
+
+		select {
+		case <-ctx.Done():
+			cleanup()
+			return nil, ctx.Err()
+		case res := <-ch:
+			cleanup()
+			return res.digest, nil
+		}
+	}
+}
+
+func (r *receiver) handleHashResponse(id uint32, digest []byte) error {
+	r.muHash.Lock()
+	ch, ok := r.hashWaiters[id]
+	r.muHash.Unlock()
+	if !ok {
+		return nil
+	}
+
+	digestCopy := append([]byte(nil), digest...)
+	ch <- hashResult{digest: digestCopy}
 	return nil
 }
 
