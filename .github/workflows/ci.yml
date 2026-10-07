@@ -154,7 +154,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   test-bsd-amd64:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -165,49 +165,75 @@ jobs:
     steps:
       -
         name: Prepare
+        shell: bash
         run: |
-          echo "VAGRANT_FILE=hack/Vagrantfile.${{ matrix.os }}" >> $GITHUB_ENV
-
-          # Sets semver Go version to be able to download tarball during vagrant setup
-          goVersion=$(curl --silent "https://go.dev/dl/?mode=json&include=all" | jq -r '.[].files[].version' | uniq | sed -e 's/go//' | sort -V | grep $GO_VERSION | tail -1)
-          echo "GO_VERSION=$goVersion" >> $GITHUB_ENV
+          goVersion=$(curl --fail --silent --show-error "https://go.dev/dl/?mode=json&include=all" | jq -er --arg version "go${GO_VERSION}." '[.[] | select(.stable and (.version | startswith($version)))][0].version')
+          echo "GO_VERSION=${goVersion#go}" >> "$GITHUB_ENV"
       -
         name: Checkout
         uses: actions/checkout@v7
       -
-        name: Cache Vagrant boxes
-        uses: actions/cache@v6
+        name: Set up FreeBSD
+        if: matrix.os == 'freebsd'
+        uses: vmactions/freebsd-vm@c46abacb49f09938ca4e1702d15d836285d694cc # v1.5.9
         with:
-          path: ~/.vagrant.d/boxes
-          key: ${{ runner.os }}-vagrant-${{ matrix.os }}-${{ hashFiles(env.VAGRANT_FILE) }}
-          restore-keys: |
-            ${{ runner.os }}-vagrant-${{ matrix.os }}-
+          release: "14.5"
+          envs: GO_VERSION
+          custom-shell-name: bsd
+          prepare: |
+            set -ex
+            mkdir -p /var/tmp
+            chmod 1777 /var/tmp
+            archive="go${GO_VERSION}.freebsd-amd64.tar.gz"
+            fetch -o "/var/tmp/$archive" "https://go.dev/dl/$archive"
+            tar -C /var/tmp -xzf "/var/tmp/$archive"
+            pw useradd -n fsutil -m -s /bin/sh
       -
-        name: Install vagrant
-        run: |
-          set -x
-          wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-          sudo apt-get update
-          sudo apt-get install -y libvirt-dev libvirt-daemon libvirt-daemon-system vagrant vagrant-libvirt ruby-libvirt
-          sudo systemctl enable --now libvirtd
-          sudo chmod a+rw /var/run/libvirt/libvirt-sock
-          vagrant plugin install vagrant-libvirt
-          vagrant --version
+        name: Set up NetBSD
+        if: matrix.os == 'netbsd'
+        uses: vmactions/netbsd-vm@c8a0d7ddb84619a7a8cc4e652efa7950b3fd9f92 # v1.5.2
+        with:
+          release: "10.2"
+          envs: GO_VERSION
+          custom-shell-name: bsd
+          prepare: |
+            set -ex
+            mkdir -p /var/tmp
+            chmod 1777 /var/tmp
+            archive="go${GO_VERSION}.netbsd-amd64.tar.gz"
+            ftp -o "/var/tmp/$archive" "https://go.dev/dl/$archive"
+            tar -C /var/tmp -xzf "/var/tmp/$archive"
+            useradd -m -s /bin/sh fsutil
       -
-        name: Set up vagrant
-        run: |
-          ln -sf ${{ env.VAGRANT_FILE }} Vagrantfile
-          vagrant up --no-tty
+        name: Set up OpenBSD
+        if: matrix.os == 'openbsd'
+        uses: vmactions/openbsd-vm@5f7b2c933b8846a138361d6843c52af4bef5d945 # v1.4.8
+        with:
+          release: "7.9"
+          envs: GO_VERSION
+          custom-shell-name: bsd
+          prepare: |
+            set -ex
+            mkdir -p /var/tmp
+            chmod 1777 /var/tmp
+            archive="go${GO_VERSION}.openbsd-amd64.tar.gz"
+            ftp -o "/var/tmp/$archive" "https://go.dev/dl/$archive"
+            tar -C /var/tmp -xzf "/var/tmp/$archive"
+            useradd -m -s /bin/sh fsutil
       -
         name: Test
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
-        with:
-          timeout_minutes: 20
-          max_attempts: 5
-          command: |
-            vagrant ssh -- "cd /vagrant; go test -buildvcs=false -coverprofile=coverage.txt -covermode=atomic ./..."
-            vagrant ssh -c "sudo cat /vagrant/coverage.txt" > coverage.txt
+        run: |
+          bsd /dev/stdin <<'EOF'
+          set -ex
+          chown -R fsutil "$GITHUB_WORKSPACE"
+          su - fsutil -c '
+            set -ex
+            cd "$1"
+            export TMPDIR=/var/tmp
+            export PATH="/var/tmp/go/bin:$PATH"
+            go test -buildvcs=false -coverprofile=coverage.txt -covermode=atomic ./...
+          ' sh "$GITHUB_WORKSPACE"
+          EOF
       -
         name: Upload coverage
         if: always()
