@@ -16,20 +16,12 @@ import (
 var _ RootLChtimes = (*root)(nil)
 
 func (r *root) LChtimes(name string, mtime time.Time) error {
-	parent, base, closeParent, err := r.openRootParent(name)
+	entry, err := OpenRootEntry(r, name)
 	if err != nil {
 		return err
 	}
-	if closeParent {
-		defer parent.Close()
-	}
-
-	ts := unix.NsecToTimespec(mtime.UnixNano())
-	times := []unix.Timespec{ts, ts}
-	if err := unix.UtimesNanoAt(int(parent.Fd()), base, times, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return errors.WithStack(&os.PathError{Op: "utimensat", Path: name, Err: err})
-	}
-	return nil
+	defer entry.Close()
+	return entry.ChtimesNoFollow(mtime, mtime)
 }
 
 func (r *root) openRootParent(name string) (*os.File, string, bool, error) {
