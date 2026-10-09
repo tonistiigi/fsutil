@@ -9,7 +9,7 @@ import (
 	"github.com/tonistiigi/fsutil/types"
 )
 
-func handleRootTarTypeBlockCharFifo(root RootMknod, path string, stat *types.Stat) error {
+func handleRootTarTypeBlockCharFifo(entry *RootEntry, stat *types.Stat) error {
 	mode := uint32(stat.Mode & 07777)
 	if os.FileMode(stat.Mode)&os.ModeCharDevice != 0 {
 		mode |= syscall.S_IFCHR
@@ -19,5 +19,5 @@ func handleRootTarTypeBlockCharFifo(root RootMknod, path string, stat *types.Sta
 		mode |= syscall.S_IFBLK
 	}
 
-	return root.Mknod(path, mode, int(mkdev(stat.Devmajor, stat.Devminor)))
+	return entry.Mknod(mode, int(mkdev(stat.Devmajor, stat.Devminor)))
 }

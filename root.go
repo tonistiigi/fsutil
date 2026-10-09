@@ -44,12 +44,22 @@ type RootLChtimes interface {
 type root struct {
 	*os.Root
 
-	mu     sync.Mutex
-	closed bool
+	mu        sync.Mutex
+	closed    bool
+	closeRoot bool
 	rootDirState
 }
 
+// NewRoot returns a Root backed by osroot. Closing the returned Root also closes
+// osroot.
 func NewRoot(osroot *os.Root) Root {
+	return &root{Root: osroot, closeRoot: true}
+}
+
+// WrapRoot returns a Root backed by osroot without taking ownership of osroot.
+// Closing the returned Root releases fsutil-owned resources but leaves osroot
+// open.
+func WrapRoot(osroot *os.Root) Root {
 	return &root{Root: osroot}
 }
 
@@ -74,7 +84,7 @@ func (r *root) Close() error {
 	if rootDir != nil {
 		err = rootDir.Close()
 	}
-	if osroot != nil {
+	if r.closeRoot && osroot != nil {
 		if err2 := osroot.Close(); err == nil {
 			err = err2
 		}
