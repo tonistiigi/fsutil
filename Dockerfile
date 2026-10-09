@@ -49,6 +49,7 @@ EOT
 
 FROM bench-base AS bench
 WORKDIR /src
+ARG BENCH_FS_MODE
 ARG BENCH_FILE_SIZE
 RUN --mount=target=. \
     --mount=target=/go/pkg/mod,type=cache \
@@ -67,6 +68,7 @@ FROM bench-base AS bench-noroot
 WORKDIR /src
 RUN mkdir -p /go/pkg && chmod 0777 /go/pkg
 USER 1000:1000
+ARG BENCH_FS_MODE
 ARG BENCH_FILE_SIZE
 RUN --mount=target=. \
     --mount=target=/tmp/.cache,type=cache <<EOT
