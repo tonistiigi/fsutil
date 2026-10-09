@@ -4,6 +4,7 @@ package fsutil
 
 import (
 	"context"
+	gofs "io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,7 +37,21 @@ func TestRootDiskWriterXattrs(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = Walk(context.Background(), d, nil, readAsAdd(dw.HandleChange))
+	source, err := os.OpenRoot(d)
+	require.NoError(t, err)
+	sourceRoot := NewRoot(source)
+	defer sourceRoot.Close()
+
+	err = NewRootFS(sourceRoot).Walk(context.Background(), "/", func(path string, entry gofs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		fi, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		return dw.HandleChange(ChangeKindAdd, path, fi, nil)
+	})
 	require.NoError(t, err)
 
 	buf := make([]byte, len(value))
