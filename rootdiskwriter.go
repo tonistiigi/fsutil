@@ -147,7 +147,12 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 	}
 
 	if oldFi != nil && fi.IsDir() && oldFi.IsDir() {
-		if err := rewriteRootMetadata(destRoot, base, statCopy); err != nil {
+		entry, err := OpenRootEntry(destRoot, base)
+		if err != nil {
+			return err
+		}
+		defer entry.Close()
+		if err := rewriteRootEntryMetadata(entry, statCopy); err != nil {
 			return errors.Wrapf(err, "error setting dir metadata for %s", destPath)
 		}
 		return nil
@@ -158,11 +163,17 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 		newPath = ".tmp." + nextSuffix()
 	}
 
+	entry, err := OpenRootEntry(destRoot, newPath)
+	if err != nil {
+		return err
+	}
+	defer entry.Close()
+
 	isRegularFile := false
 
 	switch {
 	case fi.IsDir():
-		if err := destRoot.Mkdir(newPath, fi.Mode().Perm()); err != nil {
+		if err := entry.Mkdir(fi.Mode().Perm()); err != nil {
 			if errors.Is(err, syscall.EEXIST) {
 				// we saw a race to create this directory, so try again
 				return dw.HandleChange(kind, p, fi, nil)
@@ -171,11 +182,11 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 		}
 		dw.dirModTimes[filepath.ToSlash(destPath)] = statCopy.ModTime
 	case fi.Mode()&os.ModeDevice != 0 || fi.Mode()&os.ModeNamedPipe != 0:
-		if err := handleRootTarTypeBlockCharFifo(destRoot, newPath, statCopy); err != nil {
+		if err := handleRootTarTypeBlockCharFifo(entry, statCopy); err != nil {
 			return errors.Wrapf(err, "failed to create device %s", newPath)
 		}
 	case fi.Mode()&os.ModeSymlink != 0:
-		if err := destRoot.Symlink(statCopy.Linkname, newPath); err != nil {
+		if err := entry.Symlink(statCopy.Linkname); err != nil {
 			return errors.Wrapf(err, "failed to symlink %s", newPath)
 		}
 	case statCopy.Linkname != "":
@@ -188,7 +199,7 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 		}
 	default:
 		isRegularFile = true
-		file, err := destRoot.OpenFile(newPath, os.O_CREATE|os.O_WRONLY, fi.Mode().Perm())
+		file, err := openRootEntryFile(entry, fi.Mode().Perm())
 		if err != nil {
 			return errors.Wrapf(err, "failed to create %s", newPath)
 		}
@@ -203,7 +214,7 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 		}
 	}
 
-	if err := rewriteRootMetadata(destRoot, newPath, statCopy); err != nil {
+	if err := rewriteRootEntryMetadata(entry, statCopy); err != nil {
 		return errors.Wrapf(err, "error setting metadata for %s", newPath)
 	}
 
