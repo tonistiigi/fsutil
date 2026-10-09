@@ -63,3 +63,45 @@ func TestWriteTarSubDirFSRoot(t *testing.T) {
 
 	require.Failf(t, "expected payload", "expected payload under %q", expected)
 }
+
+func TestWriteTarClosesFileOnCopyError(t *testing.T) {
+	tmpDir := t.TempDir()
+	require.NoError(t, fstest.CreateFile("payload.txt", []byte("payload"), 0600).Apply(tmpDir))
+	f, err := NewFS(tmpDir)
+	require.NoError(t, err)
+	tracked := &tarTrackingFS{FS: f}
+	t.Cleanup(func() {
+		if tracked.file != nil {
+			tracked.file.Close()
+		}
+	})
+
+	writeErr := errors.New("archive write failed")
+	w := tarWriterFunc(func(p []byte) (int, error) {
+		if tracked.file != nil {
+			return 0, writeErr
+		}
+		return len(p), nil
+	})
+	require.ErrorIs(t, WriteTar(context.Background(), tracked, w), writeErr)
+	require.NotNil(t, tracked.file)
+	_, err = tracked.file.Read(make([]byte, 1))
+	require.ErrorIs(t, err, os.ErrClosed)
+}
+
+type tarTrackingFS struct {
+	FS
+	file io.ReadCloser
+}
+
+func (f *tarTrackingFS) Open(path string) (io.ReadCloser, error) {
+	rc, err := f.FS.Open(path)
+	f.file = rc
+	return rc, err
+}
+
+type tarWriterFunc func([]byte) (int, error)
+
+func (f tarWriterFunc) Write(p []byte) (int, error) {
+	return f(p)
+}
