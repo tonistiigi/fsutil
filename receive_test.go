@@ -350,6 +350,86 @@ func TestCopySimple(t *testing.T) {
 	forEachReceiveDiskWriter(t, testCopySimple)
 }
 
+func TestCopyDiffContent(t *testing.T) {
+	forEachReceiveDiskWriter(t, func(t *testing.T, receive receiveTestFunc) {
+		src, err := tmpDir(changeStream([]string{
+			"ADD foo file bbbb",
+			"ADD same file keep",
+			"ADD meta file data",
+		}))
+		require.NoError(t, err)
+		defer os.RemoveAll(src)
+
+		dest, err := tmpDir(changeStream([]string{
+			"ADD foo file aaaa",
+			"ADD same file keep",
+			"ADD meta file data",
+		}))
+		require.NoError(t, err)
+		defer os.RemoveAll(dest)
+
+		ts := time.Unix(123, 0)
+		require.NoError(t, os.Chtimes(filepath.Join(src, "foo"), ts, ts))
+		require.NoError(t, os.Chtimes(filepath.Join(dest, "foo"), ts, ts))
+		require.NoError(t, os.Chtimes(filepath.Join(src, "same"), ts, ts))
+		require.NoError(t, os.Chtimes(filepath.Join(dest, "same"), ts, ts))
+		require.NoError(t, os.Chtimes(filepath.Join(src, "meta"), ts.Add(time.Second), ts.Add(time.Second)))
+		require.NoError(t, os.Chtimes(filepath.Join(dest, "meta"), ts, ts))
+
+		cwd := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(cwd, "foo"), []byte("bbbb"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(cwd, "same"), []byte("keep"), 0644))
+		oldwd, err := os.Getwd()
+		require.NoError(t, err)
+		require.NoError(t, os.Chdir(cwd))
+		defer func() {
+			require.NoError(t, os.Chdir(oldwd))
+		}()
+
+		fs, err := NewFS(src)
+		require.NoError(t, err)
+
+		notify := newNotificationBuffer()
+		chs := &changes{fn: notify.HandleChange}
+
+		eg, ctx := errgroup.WithContext(context.Background())
+		s1, s2 := sockPairProto(ctx)
+		counter := newPacketCounter(s2)
+
+		eg.Go(func() error {
+			defer s1.(*fakeConnProto).closeSend()
+			return Send(ctx, s1, fs, nil)
+		})
+		eg.Go(func() error {
+			return receive(ctx, counter, dest, ReceiveOpt{
+				Differ:        DiffContent,
+				NotifyHashed:  chs.HandleChange,
+				ContentHasher: simpleSHA256Hasher,
+			})
+		})
+
+		require.NoError(t, eg.Wait())
+
+		dt, err := os.ReadFile(filepath.Join(dest, "foo"))
+		require.NoError(t, err)
+		require.Equal(t, "bbbb", string(dt))
+
+		dt, err = os.ReadFile(filepath.Join(dest, "same"))
+		require.NoError(t, err)
+		require.Equal(t, "keep", string(dt))
+
+		_, ok := chs.c["foo"]
+		require.True(t, ok)
+		_, ok = chs.c["meta"]
+		require.True(t, ok)
+		_, ok = chs.c["same"]
+		require.False(t, ok)
+
+		require.Equal(t, 2, counter.Count(types.PACKET_HASH_REQ))
+		require.Equal(t, 2, counter.Count(types.PACKET_REQ))
+	})
+}
+
 func testCopySimple(t *testing.T, receive receiveTestFunc) {
 	d, err := tmpDir(changeStream([]string{
 		"ADD foo file data1",
@@ -699,6 +779,34 @@ type fakeConnProto struct {
 	ctx      context.Context
 	recvChan chan []byte
 	sendChan chan []byte
+}
+
+type packetCounter struct {
+	Stream
+	mu     sync.Mutex
+	counts map[types.Packet_PacketType]int
+}
+
+func newPacketCounter(s Stream) *packetCounter {
+	return &packetCounter{
+		Stream: s,
+		counts: map[types.Packet_PacketType]int{},
+	}
+}
+
+func (pc *packetCounter) SendMsg(m any) error {
+	if p, ok := m.(*types.Packet); ok {
+		pc.mu.Lock()
+		pc.counts[p.Type]++
+		pc.mu.Unlock()
+	}
+	return pc.Stream.SendMsg(m)
+}
+
+func (pc *packetCounter) Count(t types.Packet_PacketType) int {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+	return pc.counts[t]
 }
 
 func (fc *fakeConnProto) Context() context.Context {
