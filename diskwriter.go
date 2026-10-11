@@ -151,7 +151,7 @@ func (dw *DiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo, er
 		if err := rewriteMetadata(destPath, statCopy); err != nil {
 			return errors.Wrapf(err, "error setting dir metadata for %s", destPath)
 		}
-		return nil
+		return dw.processChange(dw.ctx, kind, p, fi, nil)
 	}
 
 	newPath := destPath
