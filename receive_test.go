@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -105,6 +106,99 @@ func TestSendError(t *testing.T) {
 			t.Fatal("timeout")
 		case err := <-errCh:
 			assert.Contains(t, err.Error(), "foo bar")
+		}
+	})
+}
+
+// TestReceiveDataAfterCancel checks that data arriving for a file request
+// after the request was cancelled is not written to the file, and that the
+// disk writer closes the file.
+func TestReceiveDataAfterCancel(t *testing.T) {
+	forEachReceiveDiskWriter(t, func(t *testing.T, receive receiveTestFunc) {
+		dest := t.TempDir()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		s1, s2 := sockPairProto(ctx)
+
+		// A failing notification for aaa cancels the other file requests
+		// without cancelling the diff, so the receiver only reports the
+		// error after all file requests have returned.
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- receive(ctx, s2, dest, ReceiveOpt{
+				NotifyHashed: func(kind ChangeKind, p string, fi os.FileInfo, err error) error {
+					if p == "aaa" {
+						return errors.New("notify failed")
+					}
+					return nil
+				},
+				ContentHasher: simpleSHA256Hasher,
+			})
+		}()
+
+		ids := map[string]uint32{}
+		for i, name := range []string{"aaa", "bar", "foo"} {
+			st := &types.Stat{Path: name, Mode: 0644, ModTime: time.Now().UnixNano()}
+			if runtime.GOOS != "windows" {
+				st.Uid = uint32(os.Getuid())
+				st.Gid = uint32(os.Getgid())
+			}
+			require.NoError(t, s1.SendMsg(&types.Packet{Type: types.PACKET_STAT, Stat: st}))
+			ids[name] = uint32(i)
+		}
+		require.NoError(t, s1.SendMsg(&types.Packet{Type: types.PACKET_STAT}))
+
+		recvType := func(typ types.Packet_PacketType) {
+			for {
+				var p types.Packet
+				require.NoError(t, s1.RecvMsg(&p))
+				if p.Type == typ {
+					return
+				}
+			}
+		}
+		// all files are requested concurrently
+		for range ids {
+			recvType(types.PACKET_REQ)
+		}
+
+		// foo gets some data before cancellation, bar gets none
+		require.NoError(t, s1.SendMsg(&types.Packet{Type: types.PACKET_DATA, ID: ids["foo"], Data: []byte("data1")}))
+		require.Eventually(t, func() bool {
+			dt, err := os.ReadFile(filepath.Join(dest, "foo"))
+			return err == nil && string(dt) == "data1"
+		}, 10*time.Second, 10*time.Millisecond)
+
+		require.NoError(t, s1.SendMsg(&types.Packet{Type: types.PACKET_DATA, ID: ids["aaa"], Data: []byte("data0")}))
+		require.NoError(t, s1.SendMsg(&types.Packet{Type: types.PACKET_DATA, ID: ids["aaa"]}))
+		recvType(types.PACKET_ERR)
+
+		require.NoError(t, s1.SendMsg(&types.Packet{Type: types.PACKET_DATA, ID: ids["bar"], Data: []byte("data2")}))
+		require.NoError(t, s1.SendMsg(&types.Packet{Type: types.PACKET_DATA, ID: ids["foo"], Data: []byte("data3")}))
+		require.NoError(t, s1.SendMsg(&types.Packet{Type: types.PACKET_DATA, ID: ids["foo"]}))
+		require.NoError(t, s1.SendMsg(&types.Packet{Type: types.PACKET_FIN}))
+		s1.(*fakeConnProto).closeSend()
+
+		err := <-errCh
+		require.ErrorContains(t, err, "notify failed")
+
+		dt, err := os.ReadFile(filepath.Join(dest, "bar"))
+		require.NoError(t, err)
+		require.Empty(t, string(dt))
+		dt, err = os.ReadFile(filepath.Join(dest, "foo"))
+		require.NoError(t, err)
+		require.Equal(t, "data1", string(dt))
+
+		if runtime.GOOS == "linux" {
+			fds, err := os.ReadDir("/proc/self/fd")
+			require.NoError(t, err)
+			for _, fd := range fds {
+				p, err := os.Readlink(filepath.Join("/proc/self/fd", fd.Name()))
+				if err == nil {
+					require.False(t, strings.HasPrefix(p, dest+"/"), "file left open: %s", p)
+				}
+			}
 		}
 	})
 }
