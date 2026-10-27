@@ -6,13 +6,7 @@ import (
 	"testing"
 
 	"github.com/containerd/continuity"
-	"github.com/moby/go-archive"
-	"github.com/moby/sys/reexec"
 )
-
-func init() {
-	reexec.Init()
-}
 
 func benchmarkInitialCopy(b *testing.B, fn func(string, string) error, size int) {
 	baseDir := os.Getenv("BENCH_BASE_DIR")
@@ -112,10 +106,6 @@ func benchmarkIncrementalCopy(b *testing.B, fn func(string, string) error, size 
 			}
 		}
 	}
-}
-
-func copyWithTar(src, dest string) error {
-	return archive.NewDefaultArchiver().CopyWithTar(src, dest)
 }
 
 func cpa(src, dest string) error {
