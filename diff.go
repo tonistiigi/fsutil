@@ -2,7 +2,9 @@ package fsutil
 
 import (
 	"context"
+	"crypto/sha256"
 	"hash"
+	"io"
 	gofs "io/fs"
 	"os"
 	"path/filepath"
@@ -52,6 +54,9 @@ func getFSWalkerFn(newFS func() (FS, error)) walkerFn {
 			p := &currentPath{
 				path: path,
 				stat: stat,
+			}
+			if canContentCheck(stat) {
+				p.contentHash = contentHashForFS(ctx, fs, path)
 			}
 
 			select {
@@ -106,4 +111,39 @@ func mkrootstat(root Root, relpath string, fi os.FileInfo, inodemap map[uint64]s
 
 func emptyWalker(ctx context.Context, pathC chan<- *currentPath) error {
 	return nil
+}
+
+func contentHashForFS(ctx context.Context, fs FS, path string) func(context.Context) ([]byte, error) {
+	return func(hashCtx context.Context) ([]byte, error) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-hashCtx.Done():
+			return nil, hashCtx.Err()
+		default:
+		}
+
+		rc, err := fs.Open(path)
+		if err != nil {
+			return nil, err
+		}
+
+		buf := bufPool.Get().(*[]byte)
+		defer bufPool.Put(buf)
+
+		h := sha256.New()
+		if _, err := io.CopyBuffer(h, rc, *buf); err != nil {
+			rc.Close()
+			return nil, errors.WithStack(err)
+		}
+		if err := rc.Close(); err != nil {
+			return nil, errors.WithStack(err)
+		}
+		return h.Sum(nil), nil
+	}
+}
+
+func canContentCheck(stat *types.Stat) bool {
+	mode := os.FileMode(stat.Mode)
+	return mode.IsRegular() && stat.Linkname == ""
 }
