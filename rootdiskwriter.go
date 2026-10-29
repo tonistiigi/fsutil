@@ -150,7 +150,7 @@ func (dw *RootDiskWriter) HandleChange(kind ChangeKind, p string, fi os.FileInfo
 		if err := rewriteRootMetadata(destRoot, base, statCopy); err != nil {
 			return errors.Wrapf(err, "error setting dir metadata for %s", destPath)
 		}
-		return nil
+		return dw.processChange(dw.ctx, kind, p, fi, nil)
 	}
 
 	newPath := base
