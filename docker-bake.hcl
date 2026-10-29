@@ -10,6 +10,10 @@ variable "BENCH_FILE_SIZE" {
   default = null
 }
 
+variable "BENCH_FS_MODE" {
+  default = null
+}
+
 target "_platforms" {
   platforms = [
     "darwin/amd64",
@@ -73,6 +77,7 @@ target "bench-root" {
   output = ["${DESTDIR}/bench"]
   args = {
     BENCH_FILE_SIZE = BENCH_FILE_SIZE
+    BENCH_FS_MODE = BENCH_FS_MODE
   }
 }
 
@@ -82,6 +87,7 @@ target "bench-noroot" {
   output = ["${DESTDIR}/bench"]
   args = {
     BENCH_FILE_SIZE = BENCH_FILE_SIZE
+    BENCH_FS_MODE = BENCH_FS_MODE
   }
 }
 
