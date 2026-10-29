@@ -192,55 +192,87 @@ func BenchmarkCPA1000(b *testing.B) {
 }
 
 func BenchmarkDiffCopy10(b *testing.B) {
-	benchmarkInitialCopy(b, diffCopyReg, 10)
+	benchmarkInitialDiffCopy(b, false, 10)
 }
 
 func BenchmarkDiffCopy50(b *testing.B) {
-	benchmarkInitialCopy(b, diffCopyReg, 50)
+	benchmarkInitialDiffCopy(b, false, 50)
 }
 
 func BenchmarkDiffCopy200(b *testing.B) {
-	benchmarkInitialCopy(b, diffCopyReg, 200)
+	benchmarkInitialDiffCopy(b, false, 200)
 }
 
 func BenchmarkDiffCopy1000(b *testing.B) {
-	benchmarkInitialCopy(b, diffCopyReg, 1000)
+	benchmarkInitialDiffCopy(b, false, 1000)
 }
 
 func BenchmarkDiffCopyProto10(b *testing.B) {
-	benchmarkInitialCopy(b, diffCopyProto, 10)
+	benchmarkInitialDiffCopy(b, true, 10)
 }
 
 func BenchmarkDiffCopyProto50(b *testing.B) {
-	benchmarkInitialCopy(b, diffCopyProto, 50)
+	benchmarkInitialDiffCopy(b, true, 50)
 }
 
 func BenchmarkDiffCopyProto200(b *testing.B) {
-	benchmarkInitialCopy(b, diffCopyProto, 200)
+	benchmarkInitialDiffCopy(b, true, 200)
 }
 
 func BenchmarkDiffCopyProto1000(b *testing.B) {
-	benchmarkInitialCopy(b, diffCopyProto, 1000)
+	benchmarkInitialDiffCopy(b, true, 1000)
 }
 
 func BenchmarkIncrementalDiffCopy10(b *testing.B) {
-	benchmarkIncrementalCopy(b, diffCopyReg, 10)
+	benchmarkIncrementalDiffCopy(b, 10)
 }
 func BenchmarkIncrementalDiffCopy50(b *testing.B) {
-	benchmarkIncrementalCopy(b, diffCopyReg, 50)
+	benchmarkIncrementalDiffCopy(b, 50)
 }
 func BenchmarkIncrementalDiffCopy200(b *testing.B) {
-	benchmarkIncrementalCopy(b, diffCopyReg, 200)
+	benchmarkIncrementalDiffCopy(b, 200)
 }
 func BenchmarkIncrementalDiffCopy1000(b *testing.B) {
-	benchmarkIncrementalCopy(b, diffCopyReg, 1000)
+	benchmarkIncrementalDiffCopy(b, 1000)
 }
 
 func BenchmarkIncrementalDiffCopy5000(b *testing.B) {
-	benchmarkIncrementalCopy(b, diffCopyReg, 5000)
+	benchmarkIncrementalDiffCopy(b, 5000)
 }
 func BenchmarkIncrementalDiffCopy10000(b *testing.B) {
-	benchmarkIncrementalCopy(b, diffCopyReg, 10000)
+	benchmarkIncrementalDiffCopy(b, 10000)
+}
+
+type diffCopyMode struct {
+	name string
+	fn   func(bool, string, string) error
+}
+
+var diffCopyModes = []diffCopyMode{
+	{name: "path", fn: diffCopyPath},
+	{name: "osroot", fn: diffCopyRoot},
+}
+
+func benchmarkInitialDiffCopy(b *testing.B, proto bool, size int) {
+	for _, mode := range diffCopyModes {
+		b.Run(mode.name, func(b *testing.B) {
+			benchmarkInitialCopy(b, mode.transfer(proto), size)
+		})
+	}
+}
+
+func benchmarkIncrementalDiffCopy(b *testing.B, size int) {
+	for _, mode := range diffCopyModes {
+		b.Run(mode.name, func(b *testing.B) {
+			benchmarkIncrementalCopy(b, mode.transfer(false), size)
+		})
+	}
+}
+
+func (m diffCopyMode) transfer(proto bool) func(string, string) error {
+	return func(src, dest string) error {
+		return m.fn(proto, src, dest)
+	}
 }
 
 func BenchmarkIncrementalCopyWithTar10(b *testing.B) {
