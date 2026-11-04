@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tonistiigi/fsutil/types"
 )
 
 // requiresRoot skips tests that require root
@@ -77,6 +78,41 @@ func diskWriterTestFactories() []diskWriterTestFactory {
 	})
 
 	return factories
+}
+
+func TestWriterNotifiesExistingDirectoryMetadataChange(t *testing.T) {
+	for _, factory := range diskWriterTestFactories() {
+		t.Run(factory.name, func(t *testing.T) {
+			ctx := context.Background()
+			dest := t.TempDir()
+			path := filepath.Join(dest, "dir")
+			require.NoError(t, os.Mkdir(path, 0o755))
+
+			var notifications []digest.Digest
+			writer := factory.new(t, ctx, dest, DiskWriterOpt{
+				SyncDataCb:    noOpWriteTo,
+				ContentHasher: simpleSHA256Hasher,
+				NotifyCb: func(kind ChangeKind, p string, fi os.FileInfo, err error) error {
+					require.Equal(t, ChangeKindModify, kind)
+					require.Equal(t, "dir", p)
+					require.NoError(t, err)
+					notifications = append(notifications, fi.(hashed).Digest())
+					return nil
+				},
+			})
+
+			stat := &types.Stat{Path: "dir", Mode: uint32(os.ModeDir | 0o700)}
+			fi := &StatInfo{Stat: stat}
+			require.NoError(t, writer.handleChange(ChangeKindModify, "dir", fi, nil))
+			require.NoError(t, writer.wait(ctx))
+			require.Len(t, notifications, 1)
+			require.NotEqual(t, digest.Digest(""), notifications[0])
+
+			got, err := os.Stat(path)
+			require.NoError(t, err)
+			require.Equal(t, os.FileMode(0o700), got.Mode().Perm())
+		})
+	}
 }
 
 func TestWriterSimple(t *testing.T) {
