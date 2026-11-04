@@ -97,7 +97,11 @@ jobs:
         file-size:
           - ""
           - "10000"
+        fs-mode:
+          - "path"
+          - "osroot"
     env:
+      BENCH_FS_MODE: ${{ matrix.fs-mode }}
       BENCH_FILE_SIZE: ${{ matrix.file-size }}
     steps:
       -
@@ -113,7 +117,7 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           directory: ${{ env.DESTDIR }}/bench
-          flags: bench,${{ matrix.mode }},go-${{ env.GO_VERSION }},file-size-${{ matrix.file-size || 'default' }}
+          flags: bench,${{ matrix.mode }},go-${{ env.GO_VERSION }},file-size-${{ matrix.file-size || 'default' }},fs-mode-${{ matrix.fs-mode }}
           report_type: test_results
           token: ${{ secrets.CODECOV_TOKEN }}
 

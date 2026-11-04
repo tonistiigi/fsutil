@@ -3,6 +3,7 @@ package bench
 import (
 	"context"
 	"io"
+	"os"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -17,6 +18,17 @@ type closeableStream interface {
 }
 
 func diffCopy(proto bool, src, dest string) error {
+	switch mode := os.Getenv("BENCH_FS_MODE"); mode {
+	case "", "path":
+		return diffCopyPath(proto, src, dest)
+	case "osroot":
+		return diffCopyRoot(proto, src, dest)
+	default:
+		return errors.Errorf("unsupported BENCH_FS_MODE %q", mode)
+	}
+}
+
+func diffCopyPath(proto bool, src, dest string) error {
 	var s1, s2 closeableStream
 
 	eg, ctx := errgroup.WithContext(context.Background())
@@ -28,11 +40,11 @@ func diffCopy(proto bool, src, dest string) error {
 	}
 
 	eg.Go(func() error {
+		defer s1.Close()
 		fs, err := fsutil.NewFS(src)
 		if err != nil {
-			panic(err)
+			return err
 		}
-		defer s1.Close()
 		return fsutil.Send(ctx, s1, fs, nil)
 	})
 	eg.Go(func() error {
@@ -48,6 +60,41 @@ func diffCopyProto(src, dest string) error {
 }
 func diffCopyReg(src, dest string) error {
 	return diffCopy(false, src, dest)
+}
+
+func diffCopyRoot(proto bool, src, dest string) error {
+	var s1, s2 closeableStream
+
+	eg, ctx := errgroup.WithContext(context.Background())
+
+	if proto {
+		s1, s2 = sockPairProto(ctx)
+	} else {
+		s1, s2 = sockPair(ctx)
+	}
+
+	eg.Go(func() error {
+		defer s1.Close()
+		osroot, err := os.OpenRoot(src)
+		if err != nil {
+			return err
+		}
+		root := fsutil.NewRoot(osroot)
+		defer root.Close()
+		return fsutil.Send(ctx, s1, fsutil.NewRootFS(root), nil)
+	})
+	eg.Go(func() error {
+		defer s2.Close()
+		osroot, err := os.OpenRoot(dest)
+		if err != nil {
+			return err
+		}
+		root := fsutil.NewRoot(osroot)
+		defer root.Close()
+		return fsutil.ReceiveRoot(ctx, s2, root, fsutil.ReceiveOpt{})
+	})
+
+	return eg.Wait()
 }
 
 func sockPair(ctx context.Context) (closeableStream, closeableStream) {
