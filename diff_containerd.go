@@ -3,7 +3,6 @@ package fsutil
 import (
 	"bytes"
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,12 +50,10 @@ func (k ChangeKind) String() string {
 // computed during a directory changes calculation.
 type ChangeFunc func(ChangeKind, string, os.FileInfo, error) error
 
-const compareChunkSize = 32 * 1024
-
 type currentPath struct {
-	path string
-	stat *types.Stat
-	//	fullPath string
+	path        string
+	stat        *types.Stat
+	contentHash func(context.Context) ([]byte, error)
 }
 
 // doubleWalkDiff walks both directories to create a diff
@@ -69,7 +66,17 @@ func doubleWalkDiff(ctx context.Context, changeFn ChangeFunc, a, b walkerFn, fil
 
 		f1, f2 *currentPath
 		rmdir  string
+
+		changes []diffChange
+		pending []pendingContentCheck
 	)
+	emitChange := func(kind ChangeKind, path string, stat *types.Stat) error {
+		if differ == DiffContent {
+			changes = append(changes, diffChange{kind: kind, path: path, stat: stat})
+			return nil
+		}
+		return changeFn(kind, path, &StatInfo{stat}, nil)
+	}
 	g.Go(func() error {
 		defer close(c1)
 		return a(ctx, c1)
@@ -111,7 +118,7 @@ func doubleWalkDiff(ctx context.Context, changeFn ChangeFunc, a, b walkerFn, fil
 				if filter != nil {
 					filter(f2.path, statCopy)
 				}
-				f2copy = &currentPath{path: f2.path, stat: statCopy}
+				f2copy = &currentPath{path: f2.path, stat: statCopy, contentHash: f2.contentHash}
 			}
 			k, p := pathChange(f1, f2copy)
 			switch k {
@@ -134,10 +141,12 @@ func doubleWalkDiff(ctx context.Context, changeFn ChangeFunc, a, b walkerFn, fil
 				}
 				f1 = nil
 			case ChangeKindModify:
-				same, err := sameFile(f1, f2copy, differ)
+				result, err := compareFile(f1, f2copy, differ)
 				if err != nil {
 					return err
 				}
+				lower := f1
+				upper := f2copy
 				if f1.stat.IsDir() && !f2copy.stat.IsDir() {
 					rmdir = f1.path + string(filepath.Separator)
 				} else if rmdir != "" {
@@ -146,12 +155,32 @@ func doubleWalkDiff(ctx context.Context, changeFn ChangeFunc, a, b walkerFn, fil
 				f = f2.stat
 				f1 = nil
 				f2 = nil
-				if same {
+				switch result {
+				case fileCompareSame:
 					continue loop0
+				case fileCompareNeedsContentCheck:
+					pending = append(pending, pendingContentCheck{
+						changeIndex: len(changes),
+						lower:       lower,
+						upper:       upper,
+					})
 				}
 			}
-			if err := changeFn(k, p, &StatInfo{f}, nil); err != nil {
+			if err := emitChange(k, p, f); err != nil {
 				return err
+			}
+		}
+		if differ == DiffContent {
+			if err := resolveContentChecks(ctx, changes, pending); err != nil {
+				return err
+			}
+			for _, change := range changes {
+				if change.skip {
+					continue
+				}
+				if err := changeFn(change.kind, change.path, &StatInfo{change.stat}, nil); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -183,58 +212,97 @@ func pathChange(lower, upper *currentPath) (ChangeKind, string) {
 	}
 }
 
-func sameFile(f1, f2 *currentPath, differ DiffType) (same bool, retErr error) {
+type fileCompareResult int
+
+const (
+	fileCompareChanged fileCompareResult = iota
+	fileCompareSame
+	fileCompareNeedsContentCheck
+)
+
+type diffChange struct {
+	kind ChangeKind
+	path string
+	stat *types.Stat
+	skip bool
+}
+
+type pendingContentCheck struct {
+	changeIndex int
+	lower       *currentPath
+	upper       *currentPath
+}
+
+func compareFile(f1, f2 *currentPath, differ DiffType) (fileCompareResult, error) {
 	if differ == DiffNone {
-		return false, nil
+		return fileCompareChanged, nil
 	}
 	// If not a directory also check size, modtime, and content
 	if !f1.stat.IsDir() {
 		if f1.stat.Size != f2.stat.Size {
-			return false, nil
+			return fileCompareChanged, nil
 		}
 
 		if f1.stat.ModTime != f2.stat.ModTime {
-			return false, nil
+			return fileCompareChanged, nil
 		}
 	}
 
 	same, err := compareStat(f1.stat, f2.stat)
 	if err != nil || !same || differ == DiffMetadata {
-		return same, err
+		if same {
+			return fileCompareSame, err
+		}
+		return fileCompareChanged, err
 	}
-	return compareFileContent(f1.path, f2.path)
+
+	if !canContentCheck(f1.stat) || !canContentCheck(f2.stat) || f1.stat.Size == 0 {
+		return fileCompareSame, nil
+	}
+	if f1.contentHash == nil || f2.contentHash == nil {
+		return fileCompareChanged, nil
+	}
+	return fileCompareNeedsContentCheck, nil
 }
 
-func compareFileContent(p1, p2 string) (bool, error) {
-	f1, err := os.Open(p1)
-	if err != nil {
-		return false, err
+func resolveContentChecks(ctx context.Context, changes []diffChange, pending []pendingContentCheck) error {
+	if len(pending) == 0 {
+		return nil
 	}
-	defer f1.Close()
-	f2, err := os.Open(p2)
-	if err != nil {
-		return false, err
-	}
-	defer f2.Close()
 
-	b1 := make([]byte, compareChunkSize)
-	b2 := make([]byte, compareChunkSize)
-	for {
-		n1, err1 := f1.Read(b1)
-		if err1 != nil && err1 != io.EOF {
-			return false, err1
-		}
-		n2, err2 := f2.Read(b2)
-		if err2 != nil && err2 != io.EOF {
-			return false, err2
-		}
-		if n1 != n2 || !bytes.Equal(b1[:n1], b2[:n2]) {
-			return false, nil
-		}
-		if err1 == io.EOF && err2 == io.EOF {
-			return true, nil
+	lowerHashes := make([][]byte, len(pending))
+	upperHashes := make([][]byte, len(pending))
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(16)
+
+	for i, check := range pending {
+		g.Go(func() error {
+			hash, err := check.upper.contentHash(ctx)
+			if err != nil {
+				return err
+			}
+			upperHashes[i] = hash
+			return nil
+		})
+		g.Go(func() error {
+			hash, err := check.lower.contentHash(ctx)
+			if err != nil {
+				return err
+			}
+			lowerHashes[i] = hash
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	for i, check := range pending {
+		if bytes.Equal(lowerHashes[i], upperHashes[i]) {
+			changes[check.changeIndex].skip = true
 		}
 	}
+	return nil
 }
 
 // compareStat returns whether the stats are equivalent,
