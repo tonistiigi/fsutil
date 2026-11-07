@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -126,5 +127,28 @@ func TestMkdirUmaskFixExistingPath(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, os.FileMode(0770), st.Mode()&os.ModePerm)
 		})
+	}
+}
+
+func TestMkdirAllUtimes(t *testing.T) {
+	root := t.TempDir()
+	tm := time.Unix(42, 0)
+
+	existing := filepath.Join(root, "existing")
+	require.NoError(t, os.Mkdir(existing, 0755))
+	old := time.Unix(1000, 0)
+	require.NoError(t, os.Chtimes(existing, old, old))
+
+	created, err := MkdirAll(filepath.Join(existing, "a/b/c"), 0755, nil, &tm)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		filepath.Join(existing, "a"),
+		filepath.Join(existing, "a/b"),
+		filepath.Join(existing, "a/b/c"),
+	}, created)
+	for _, p := range created {
+		fi, err := os.Stat(p)
+		require.NoError(t, err)
+		require.Equal(t, tm.UnixNano(), fi.ModTime().UnixNano(), "mtime of %s", p)
 	}
 }

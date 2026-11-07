@@ -659,6 +659,84 @@ func TestCopyFileWithPathTimestamp(t *testing.T) {
 	}
 }
 
+func requireModTime(t *testing.T, root string, tm time.Time, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		stat, err := os.Lstat(filepath.Join(root, p))
+		require.NoError(t, err)
+		require.Equal(t, tm.UnixNano(), stat.ModTime().UnixNano(), "path: %s", p)
+	}
+}
+
+func TestCopyCreatedDirsTimestamp(t *testing.T) {
+	timestamp := time.Unix(42, 0)
+	srcTime := time.Unix(1000, 0)
+	apply := fstest.Apply(
+		fstest.CreateDir("/foo/", 0755),
+		fstest.CreateDir("/foo/bar", 0755),
+		fstest.CreateFile("/foo/bar/baz", []byte{}, 0644),
+		fstest.CreateFile("/foo/qux", []byte{}, 0644),
+		fstest.Chtimes("/foo/bar/baz", srcTime, srcTime),
+		fstest.Chtimes("/foo/qux", srcTime, srcTime),
+		fstest.Chtimes("/foo/bar", srcTime, srcTime),
+		fstest.Chtimes("/foo", srcTime, srcTime),
+	)
+	t1 := t.TempDir()
+	require.NoError(t, apply.Apply(t1))
+
+	t.Run("file", func(t *testing.T) {
+		t2 := t.TempDir()
+		require.NoError(t, Copy(context.TODO(), t1, "/foo/qux", t2, "/a/b/c/", WithCopyInfo(CopyInfo{
+			CreatedDirsUtime: &timestamp,
+		})))
+		requireModTime(t, t2, timestamp, "/a", "/a/b", "/a/b/c")
+		requireModTime(t, t2, srcTime, "/a/b/c/qux")
+	})
+
+	t.Run("file to path", func(t *testing.T) {
+		t2 := t.TempDir()
+		require.NoError(t, Copy(context.TODO(), t1, "/foo/qux", t2, "/a/b/c", WithCopyInfo(CopyInfo{
+			CreatedDirsUtime: &timestamp,
+		})))
+		requireModTime(t, t2, timestamp, "/a", "/a/b")
+		requireModTime(t, t2, srcTime, "/a/b/c")
+	})
+
+	t.Run("dir contents", func(t *testing.T) {
+		t2 := t.TempDir()
+		require.NoError(t, Copy(context.TODO(), t1, "/foo", t2, "/a/b/c", WithCopyInfo(CopyInfo{
+			CopyDirContents:  true,
+			CreatedDirsUtime: &timestamp,
+		})))
+		requireModTime(t, t2, timestamp, "/a", "/a/b")
+		// /a/b/c is the copy of /foo
+		requireModTime(t, t2, srcTime, "/a/b/c", "/a/b/c/bar", "/a/b/c/bar/baz", "/a/b/c/qux")
+	})
+
+	t.Run("dir", func(t *testing.T) {
+		t2 := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(t2, "a/b"), 0755))
+		existing := time.Unix(2000, 0)
+		require.NoError(t, os.Chtimes(filepath.Join(t2, "a"), existing, existing))
+		require.NoError(t, Copy(context.TODO(), t1, "/foo/bar", t2, "/a/b/c/d/", WithCopyInfo(CopyInfo{
+			CreatedDirsUtime: &timestamp,
+		})))
+		requireModTime(t, t2, existing, "/a")
+		requireModTime(t, t2, timestamp, "/a/b/c", "/a/b/c/d")
+		requireModTime(t, t2, srcTime, "/a/b/c/d/bar", "/a/b/c/d/bar/baz")
+	})
+
+	t.Run("utime takes precedence", func(t *testing.T) {
+		t2 := t.TempDir()
+		other := time.Unix(7, 0)
+		require.NoError(t, Copy(context.TODO(), t1, "/foo/qux", t2, "/a/b/", WithCopyInfo(CopyInfo{
+			Utime:            &other,
+			CreatedDirsUtime: &timestamp,
+		})))
+		requireModTime(t, t2, other, "/a", "/a/b", "/a/b/qux")
+	})
+}
+
 type changeCollector struct {
 	changes []string
 }
