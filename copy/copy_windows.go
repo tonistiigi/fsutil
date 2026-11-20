@@ -45,6 +45,10 @@ func (c *copier) copyFileInfo(fi os.FileInfo, src, name string) error {
 		return errors.Wrapf(err, "failed to chmod %s", name)
 	}
 
+	if err := c.copyFileTimestamp(fi, name); err != nil {
+		return err
+	}
+
 	sid, dacl, err := getFileSecurityInfo(src)
 	if err != nil {
 		return errors.Wrap(err, "getting file info")
@@ -56,7 +60,6 @@ func (c *copier) copyFileInfo(fi os.FileInfo, src, name string) error {
 		if err := Chown(name, usr, c.chown); err != nil {
 			return errors.Wrapf(err, "failed to chown %s", name)
 		}
-		return nil
 	} else {
 		// Copy file ownership and ACL from the source file.
 		// We need SeRestorePrivilege and SeTakeOwnershipPrivilege in order
@@ -78,9 +81,6 @@ func (c *copier) copyFileInfo(fi os.FileInfo, src, name string) error {
 		}
 	}
 
-	if err := c.copyFileTimestamp(fi, name); err != nil {
-		return err
-	}
 	return nil
 }
 
