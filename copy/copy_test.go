@@ -659,6 +659,80 @@ func TestCopyFileWithPathTimestamp(t *testing.T) {
 	}
 }
 
+func TestCopyPreservesExistingTargetAndIncludeParentTimestamps(t *testing.T) {
+	srcTime := time.Unix(1000, 0)
+	dstTime := time.Unix(2000, 0)
+	overrideTime := time.Unix(42, 0)
+
+	src := t.TempDir()
+	require.NoError(t, fstest.Apply(
+		fstest.CreateDir("/pkg", 0755),
+		fstest.CreateDir("/pkg/sub", 0755),
+		fstest.CreateFile("/pkg/sub/file.txt", []byte("hi"), 0644),
+		fstest.Chtimes("/pkg/sub/file.txt", srcTime, srcTime),
+		fstest.Chtimes("/pkg/sub", srcTime, srcTime),
+		fstest.Chtimes("/pkg", srcTime, srcTime),
+	).Apply(src))
+	srcRootTime := time.Unix(3000, 0)
+	require.NoError(t, os.Chtimes(src, srcRootTime, srcRootTime))
+
+	t.Run("include patterns with Utime and pre-existing parent", func(t *testing.T) {
+		dst := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(dst, "monorepo/pkg"), 0755))
+		require.NoError(t, os.Chtimes(filepath.Join(dst, "monorepo/pkg"), dstTime, dstTime))
+		require.NoError(t, os.Chtimes(filepath.Join(dst, "monorepo"), dstTime, dstTime))
+
+		require.NoError(t, Copy(context.Background(), src, "/", dst, "/monorepo", WithCopyInfo(CopyInfo{
+			CopyDirContents: true,
+			IncludePatterns: []string{"pkg/sub/file.txt"},
+			Utime:           &overrideTime,
+		}), AllowXAttrErrors))
+
+		for _, p := range []string{"/monorepo", "/monorepo/pkg"} {
+			fi, err := os.Lstat(filepath.Join(dst, p))
+			require.NoError(t, err)
+			require.Equal(t, dstTime.UnixNano(), fi.ModTime().UnixNano(), "existing dir %s", p)
+		}
+		for _, p := range []string{"/monorepo/pkg/sub", "/monorepo/pkg/sub/file.txt"} {
+			fi, err := os.Lstat(filepath.Join(dst, p))
+			require.NoError(t, err)
+			require.Equal(t, overrideTime.UnixNano(), fi.ModTime().UnixNano(), "created path %s", p)
+		}
+	})
+
+	t.Run("include patterns without Utime preserve source dir mtimes", func(t *testing.T) {
+		dst := t.TempDir()
+		require.NoError(t, os.Mkdir(filepath.Join(dst, "monorepo"), 0755))
+		require.NoError(t, os.Chtimes(filepath.Join(dst, "monorepo"), dstTime, dstTime))
+
+		require.NoError(t, Copy(context.Background(), src, "/", dst, "/monorepo", WithCopyInfo(CopyInfo{
+			CopyDirContents: true,
+			IncludePatterns: []string{"pkg/sub/file.txt"},
+		}), AllowXAttrErrors))
+
+		fiRoot, err := os.Lstat(filepath.Join(dst, "monorepo"))
+		require.NoError(t, err)
+		require.Equal(t, dstTime.UnixNano(), fiRoot.ModTime().UnixNano())
+
+		for _, p := range []string{"/monorepo/pkg", "/monorepo/pkg/sub", "/monorepo/pkg/sub/file.txt"} {
+			fi, err := os.Lstat(filepath.Join(dst, p))
+			require.NoError(t, err)
+			require.Equal(t, srcTime.UnixNano(), fi.ModTime().UnixNano(), "path %s", p)
+		}
+	})
+
+	t.Run("CopyDirContents into non-existent destination copies source dir mtime", func(t *testing.T) {
+		dst := t.TempDir()
+		require.NoError(t, Copy(context.Background(), src, "/", dst, "/newdst", WithCopyInfo(CopyInfo{
+			CopyDirContents: true,
+		}), AllowXAttrErrors))
+
+		fiRoot, err := os.Lstat(filepath.Join(dst, "newdst"))
+		require.NoError(t, err)
+		require.Equal(t, srcRootTime.UnixNano(), fiRoot.ModTime().UnixNano())
+	})
+}
+
 type changeCollector struct {
 	changes []string
 }

@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
+	"github.com/containerd/continuity/fs/fstest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
@@ -177,4 +179,50 @@ func readUidGid(fi os.FileInfo) (uid, gid int, ok bool) {
 		return int(stat.Uid), int(stat.Gid), true
 	}
 	return 0, 0, false
+}
+
+func TestCopyRestoreExistingDirPreservesAtime(t *testing.T) {
+	srcTime := time.Unix(1000, 0)
+	dstAtime := time.Unix(1500, 0)
+	dstMtime := time.Unix(2000, 0)
+	overrideTime := time.Unix(42, 0)
+
+	src := t.TempDir()
+	require.NoError(t, fstest.Apply(
+		fstest.CreateDir("/pkg", 0755),
+		fstest.CreateDir("/pkg/sub", 0755),
+		fstest.CreateFile("/pkg/sub/file.txt", []byte("hi"), 0644),
+		fstest.Chtimes("/pkg/sub/file.txt", srcTime, srcTime),
+		fstest.Chtimes("/pkg/sub", srcTime, srcTime),
+		fstest.Chtimes("/pkg", srcTime, srcTime),
+	).Apply(src))
+
+	dst := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dst, "monorepo/pkg"), 0755))
+	require.NoError(t, os.Chtimes(filepath.Join(dst, "monorepo/pkg"), dstAtime, dstMtime))
+	require.NoError(t, os.Chtimes(filepath.Join(dst, "monorepo"), dstAtime, dstMtime))
+
+	// Check whether the host filesystem preserves distinct atime on directories
+	// across ReadDir/child creation before asserting.
+	preFi, err := os.Lstat(filepath.Join(dst, "monorepo"))
+	require.NoError(t, err)
+	preAtime := StatAtime(preFi.Sys().(*syscall.Stat_t))
+
+	require.NoError(t, Copy(context.Background(), src, "/", dst, "/monorepo", WithCopyInfo(CopyInfo{
+		CopyDirContents: true,
+		IncludePatterns: []string{"pkg/sub/file.txt"},
+		Utime:           &overrideTime,
+	}), AllowXAttrErrors))
+
+	for _, p := range []string{"/monorepo", "/monorepo/pkg"} {
+		fi, err := os.Lstat(filepath.Join(dst, p))
+		require.NoError(t, err)
+		st := fi.Sys().(*syscall.Stat_t)
+		require.Equal(t, dstMtime.UnixNano(), fi.ModTime().UnixNano(), "mtime for %s", p)
+		gotAtime := StatAtime(st)
+		require.NotEqual(t, dstMtime.Unix(), int64(gotAtime.Sec), "restoreModTime must not overwrite atime with mtime on %s", p)
+		if int64(preAtime.Sec) == dstAtime.Unix() {
+			require.Equal(t, dstAtime.Unix(), int64(gotAtime.Sec), "atime for %s", p)
+		}
+	}
 }

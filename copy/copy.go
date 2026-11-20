@@ -73,6 +73,19 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 	for _, o := range opts {
 		o(&ci)
 	}
+	var setupCreated map[string]struct{}
+	recordSetupCreated := func(dirs []string) {
+		if len(dirs) == 0 {
+			return
+		}
+		if setupCreated == nil {
+			setupCreated = make(map[string]struct{}, len(dirs))
+		}
+		for _, d := range dirs {
+			setupCreated[filepath.Clean(d)] = struct{}{}
+		}
+	}
+
 	ensureDstPath := dst
 	if d, f := filepath.Split(dst); f != "" && f != "." {
 		ensureDstPath = d
@@ -89,6 +102,7 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		if createdDirs, err := MkdirAll(ensureDstPath, os.FileMode(perm), ci.Chown, ci.Utime); err != nil {
 			return err
 		} else {
+			recordSetupCreated(createdDirs)
 			defer fixCreatedParentDirs(createdDirs, ci.Utime)
 		}
 	}
@@ -134,6 +148,8 @@ func Copy(ctx context.Context, srcRoot, src, dstRoot, dst string, opts ...Opt) e
 		if err != nil {
 			return err
 		}
+		recordSetupCreated(createdDirs)
+		c.setupCreated = setupCreated
 		defer fixCreatedParentDirs(createdDirs, ci.Utime)
 		if err := c.copy(ctx, srcFollowed, "", dst, false, patternmatcher.MatchInfo{}, patternmatcher.MatchInfo{}); err != nil {
 			return err
@@ -273,6 +289,7 @@ type copier struct {
 	includePatternMatcher          *patternmatcher.PatternMatcher
 	excludePatternMatcher          *patternmatcher.PatternMatcher
 	parentDirs                     []parentDir
+	setupCreated                   map[string]struct{}
 	changefn                       fsutil.ChangeFunc
 	root                           string
 	alwaysReplaceExistingDestPaths bool
@@ -283,6 +300,8 @@ type parentDir struct {
 	srcPath string
 	dstPath string
 	copied  bool
+	created bool
+	prevFi  os.FileInfo
 }
 
 func newCopier(root string, chown Chowner, tm *time.Time, mode *int, modeSet *mode.Set, xeh XAttrErrorHandler, includePatterns, excludePatterns []string, alwaysReplaceExistingDestPaths bool, changeFunc fsutil.ChangeFunc) (*copier, error) {
@@ -393,13 +412,20 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 	if err != nil && !os.IsNotExist(err) {
 		return errors.Wrapf(err, "failed to stat %s", target)
 	}
+	var prevTargetDirFi os.FileInfo
+	if targetFi != nil && targetFi.IsDir() && fi.IsDir() && !overwriteTargetMetadata {
+		prevTargetDirFi, err = snapshotDirInfo(target)
+		if err != nil {
+			return err
+		}
+	}
 
 	if include {
-		if err := c.removeTargetIfNeeded(target, fi, targetFi); err != nil {
+		if err := c.createParentDirs(src, overwriteTargetMetadata); err != nil {
 			return err
 		}
 
-		if err := c.createParentDirs(src, overwriteTargetMetadata); err != nil {
+		if err := c.removeTargetIfNeeded(target, fi, targetFi); err != nil {
 			return err
 		}
 	}
@@ -470,8 +496,14 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 			return errors.Wrap(err, "failed to copy xattrs")
 		}
 	} else if restoreFileTimestamp && targetFi != nil {
-		if err := c.copyFileTimestamp(fi, target); err != nil {
-			return errors.Wrap(err, "failed to restore file timestamp")
+		if c.isSetupCreated(target) {
+			if err := c.copyFileTimestamp(fi, target); err != nil {
+				return errors.Wrap(err, "failed to copy file timestamp")
+			}
+		} else if prevTargetDirFi != nil {
+			if err := restoreDirModTimeIfChanged(target, prevTargetDirFi); err != nil {
+				return errors.Wrap(err, "failed to restore file timestamp")
+			}
 		}
 	}
 	if notify {
@@ -480,6 +512,14 @@ func (c *copier) copy(ctx context.Context, src, srcComponents, target string, ov
 		}
 	}
 	return nil
+}
+
+func (c *copier) isSetupCreated(p string) bool {
+	if len(c.setupCreated) == 0 {
+		return false
+	}
+	_, ok := c.setupCreated[filepath.Clean(p)]
+	return ok
 }
 
 func (c *copier) notifyChange(target string, fi os.FileInfo) error {
@@ -546,21 +586,24 @@ func (c *copier) createParentDirs(src string, overwriteTargetMetadata bool) erro
 			return errors.Errorf("%s is not a directory", parentDir.srcPath)
 		}
 
+		prevFi, err := snapshotDirInfo(parentDir.dstPath)
+		if err != nil {
+			return err
+		}
+
 		created, err := copyDirectoryOnly(parentDir.dstPath, fi, overwriteTargetMetadata)
 		if err != nil {
 			return err
 		}
-		if created {
-			if err := c.copyFileInfo(fi, parentDir.srcPath, parentDir.dstPath); err != nil {
-				return errors.Wrap(err, "failed to copy file info")
-			}
-
-			if err := copyXAttrs(parentDir.dstPath, parentDir.srcPath, c.xattrErrorHandler); err != nil {
-				return errors.Wrap(err, "failed to copy xattrs")
+		if created && fi.Mode().Perm()&0700 != 0700 && runtime.GOOS != "windows" {
+			if err := os.Chmod(parentDir.dstPath, fi.Mode()|0700); err != nil {
+				return errors.Wrapf(err, "failed to chmod %s", parentDir.dstPath)
 			}
 		}
 
 		c.parentDirs[i].copied = true
+		c.parentDirs[i].created = created
+		c.parentDirs[i].prevFi = prevFi
 	}
 	return nil
 }
@@ -606,6 +649,7 @@ func (c *copier) copyDirectory(
 		parentDir.copied = true
 	}
 
+	parentIdx := len(c.parentDirs)
 	c.parentDirs = append(c.parentDirs, parentDir)
 
 	defer func() {
@@ -632,6 +676,21 @@ func (c *copier) copyDirectory(
 			true, includeMatchInfo, excludeMatchInfo,
 		); err != nil {
 			return false, err
+		}
+	}
+
+	if !include && c.parentDirs[parentIdx].copied {
+		if c.parentDirs[parentIdx].created {
+			if err := c.copyFileInfo(stat, src, dst); err != nil {
+				return false, errors.Wrap(err, "failed to copy file info")
+			}
+			if err := copyXAttrs(dst, src, c.xattrErrorHandler); err != nil {
+				return false, errors.Wrap(err, "failed to copy xattrs")
+			}
+		} else if prevFi := c.parentDirs[parentIdx].prevFi; prevFi != nil {
+			if err := restoreDirModTimeIfChanged(dst, prevFi); err != nil {
+				return false, errors.Wrap(err, "failed to restore parent timestamp")
+			}
 		}
 	}
 

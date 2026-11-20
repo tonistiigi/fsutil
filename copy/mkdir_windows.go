@@ -5,6 +5,7 @@ package fs
 import (
 	"fmt"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,6 +36,125 @@ func Utimes(p string, tm *time.Time) error {
 		if err := os.Chtimes(p, *tm, *tm); err != nil {
 			return errors.Wrap(err, "changing times")
 		}
+	}
+	return nil
+}
+
+func longPathUTF16(path string) ([]uint16, error) {
+	if strings.HasPrefix(path, `\\?\`) || strings.HasPrefix(path, `\??\`) || strings.HasPrefix(path, `\\.\`) {
+		return windows.UTF16FromString(path)
+	}
+	in, err := windows.UTF16FromString(path)
+	if err != nil {
+		return nil, err
+	}
+	n := uint32(len(in))
+	var full []uint16
+	for {
+		buf := make([]uint16, n)
+		r, err := windows.GetFullPathName(&in[0], n, &buf[0], nil)
+		if err != nil {
+			return nil, err
+		}
+		if r < n {
+			full = buf[:r]
+			break
+		}
+		n = r
+	}
+	abs := windows.UTF16ToString(full)
+	if len(abs) < 248 {
+		return windows.UTF16FromString(abs)
+	}
+	if strings.HasPrefix(abs, `\\`) {
+		return windows.UTF16FromString(`\\?\UNC\` + abs[2:])
+	}
+	return windows.UTF16FromString(`\\?\` + abs)
+}
+
+func snapshotDirInfo(p string) (os.FileInfo, error) {
+	fullPath, err := longPathUTF16(p)
+	if err != nil {
+		return nil, errors.Wrap(err, "converting to utf16 path")
+	}
+	h, err := windows.CreateFile(
+		&fullPath[0],
+		windows.FILE_READ_ATTRIBUTES,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT,
+		0,
+	)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+			return nil, nil
+		}
+		return nil, errors.Wrapf(err, "failed to stat %s", p)
+	}
+	f := os.NewFile(uintptr(h), p)
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to stat %s", p)
+	}
+	if !fi.IsDir() {
+		return nil, nil
+	}
+	return fi, nil
+}
+
+func restoreDirModTimeIfChanged(p string, prevFi os.FileInfo) error {
+	rawPrev, ok := prevFi.Sys().(*syscall.Win32FileAttributeData)
+	if !ok {
+		return nil
+	}
+	curFi, err := snapshotDirInfo(p)
+	if err != nil || curFi == nil || !os.SameFile(prevFi, curFi) {
+		return err
+	}
+	if rawCur, ok := curFi.Sys().(*syscall.Win32FileAttributeData); ok && rawCur.LastWriteTime == rawPrev.LastWriteTime {
+		return nil
+	}
+	fullPath, err := longPathUTF16(p)
+	if err != nil {
+		return errors.Wrap(err, "converting to utf16 path")
+	}
+	h, err := windows.CreateFile(
+		&fullPath[0],
+		windows.FILE_READ_ATTRIBUTES|windows.FILE_WRITE_ATTRIBUTES,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT,
+		0,
+	)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrPermission) {
+			return nil
+		}
+		return errors.Wrap(err, "opening handle to restore mtime")
+	}
+	f := os.NewFile(uintptr(h), p)
+	defer f.Close()
+
+	recheckFi, err := f.Stat()
+	if err != nil {
+		return errors.Wrap(err, "reading handle attributes")
+	}
+	if !recheckFi.IsDir() || !os.SameFile(prevFi, recheckFi) {
+		return nil
+	}
+	ft := windows.Filetime{
+		LowDateTime:  rawPrev.LastWriteTime.LowDateTime,
+		HighDateTime: rawPrev.LastWriteTime.HighDateTime,
+	}
+	if err := windows.SetFileTime(h, nil, nil, &ft); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			return nil
+		}
+		return errors.Wrap(err, "restoring mtime")
 	}
 	return nil
 }
